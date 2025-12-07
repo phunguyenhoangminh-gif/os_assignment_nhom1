@@ -295,4 +295,8 @@ int print_list_vma(struct vm_area_struct *rg);
 
 int print_list_pgn(struct pgn_t *ip);
 int print_pgtbl(struct pcb_t *ip, addr_t start, addr_t end);
+//khai báo prototype
+int pg_getval(struct mm_struct *mm, int addr, BYTE *data, struct pcb_t *caller);
+int pg_setval(struct mm_struct *mm, int addr, BYTE value, struct pcb_t *caller);
+int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller);
 #endif
