@@ -1,0 +1,95 @@
+\section{Questions \& Answers}
+\subsection*{1. List some other popular Linux shells and describe their highlighted features}
+\begin{enumerate}
+    \item The C shell - denoted as \code{csh} or \code{tcsh} in \texttt{macOS} or \texttt{Red Hat Linux}
+        \vspace{-0.5cm}
+        \begin{itemize}
+            \item Created by Bill Joy while he was a graduate student at University of California, Berkeley in the late 1970s.
+            \item \textbf{Features:} C-like syntax, built-in arithmetic, command history, aliases definition, spelling correction...
+        \end{itemize}
+        \vspace{-0.5cm}
+    \item The Z Shell - denoted as \code{zsh}
+        \vspace{-0.5cm}
+        \begin{itemize}
+            \item Written by Paul Falstad in 1990 while he was a student at Princeton University. This is a Unix shell created as an extension for the Bourne shell.
+            \item \textbf{Features:} Shared history among all running shell sessions, spelling corrections and command name autofill based on multiple factors: context-aware, Git branches, file paths...
+        \end{itemize}
+        \vspace{-0.5cm}
+    \item Debian Almquist Shell - denoted as \code{dash}
+        \vspace{-0.5cm}
+        \begin{itemize}
+            \item A Unix shell developed from the Almquist Shell \code{ash}, famous for being Debian and Ubuntu default shell
+            \item \textbf{Features:} The shell is minimal and POSIX (Portable Operating System Interface) compliant, execution speeds up to 4x faster than bash and other shells, using less resource than other alternatives...
+            \item However, \code{dash} is not \code{bash}-compatible, require additional reworkings of features not included in \code{dash} to run succesfully.
+        \end{itemize}
+        \vspace{-0.5cm}
+\end{enumerate}
+\subsection*{2. Compare the Output Redirection (\textgreater{} / \textgreater{}\textgreater{}) with the Piping (|) technique}
+    \begin{tabular}{|>{\centering\arraybackslash}m{2.5cm}|>{\centering\arraybackslash}m{6cm}|>{\centering\arraybackslash}m{6cm}|}
+        \hline
+        \textbf{Aspects} & \makecell{\textbf{Output Redirection} \\(\textgreater{} / \textgreater{}\textgreater{})} & \makecell{\textbf{Piping}\\(|)}\\
+        \hline
+        Destination & File on disk & Another command\\
+        \hline
+        Result & Stored data & Processed data \\
+        \hline
+        Chaining & Single Operation & Multiple commands in sequence\\
+        \hline
+        Data flow & Command $\rightarrow$ file & Command $\rightarrow$ Command\\
+        \hline
+        Syntax & \makecell[l]{command \textgreater{} file (overwrite) \\ command \textgreater{}\textgreater{} file (append)} & command1 | command2\\
+        \hline
+    \end{tabular}
+\subsection*{3. Compare the \texttt{sudo} and \texttt{su} commands}
+    \begin{tabular}{|>{\centering\arraybackslash}m{3cm}|>{\centering\arraybackslash}m{6cm}|>{\centering\arraybackslash}m{6cm}|}
+        \hline
+        \textbf{Aspects} & \code{sudo} & \code{su}\\
+        \hline
+        Purpose & Executes a single command with privileges temporarily. & Switching from one user to another\\
+        \hline
+        Authentication &  Requires \texttt{current user's password}  & Requires \texttt{target user's password} \\
+        \hline
+        Session type & Doesn't change the current shell & Open a \texttt{new login shell} for the target user\\
+        \hline
+        Example & \code{sudo apt-get update} & \code{su} or \code{su -}\\
+        \hline
+    \end{tabular}
+\subsection*{4. Discuss about the 777 permission on critical services (web hostings, sensitive databases,...)}
+The 777 permission in Linux grants full read, write, and execute access to everyone — the owner, group, and others. Though this permission may seem convenient, it poses serious security risks: anyone can modify, delete, or execute the file, potentially 
+leading to malware injection, privilege escalation, or data loss. Typically, 777 should only be used temporarily in testing environments, never in production systems. Instead, follow \textbf{"the principle of least privilege"}, use \code{chown} to assign the 
+correct owner, apply specific permissions like \texttt{755} or \texttt{640}, and use the sticky bit (\texttt{1777}) for shared directories such as \code{/tmp}. Regular permission audits and a properly configured umask help ensure that the system remains both functional and secure.
+\subsection*{5. What are the advantages of Makefile? Give examples}
+A Makefile is a file used by the \code{make} build automation tool to control the compilation and building of programs - such as C/C++ and other compiled languages. It defines how to compile and link a program automatically, saving time and avoiding repetitive manual commands.\\
+\quad \textbf{Advantages:}
+\begin{itemize}
+    \item \textbf{Automation:} Builds automatically based on dependencies
+    \item \textbf{Efficiency:} Rebuilds only modified file
+    \item \textbf{Consistency:}	Same build steps for everyone
+    \item \textbf{Scalability:}	Handles large multi-file projects
+    \item \textbf{Portability:}	Works across systems and environments
+\end{itemize}
+\quad \textbf{Example:}
+\begin{lstlisting}
+    CC = gcc
+    CFLAGS = -Wall
+    OBJ = main.o add.o sub.o
+    TARGET = calculator
+
+    $(TARGET): $(OBJ)
+	    $(CC) $(CFLAGS) -o $(TARGET) $(OBJ)
+
+    %.o: %.c
+	    $(CC) $(CFLAGS) -c $<
+
+    clean:
+	    rm -f $(OBJ) $(TARGET)
+\end{lstlisting}
+\subsection*{6. Compiling a program in the first time usually takes a longer time in comparison with the next re-compiling. What is the reason?}
+\quad First compilation compiles all source files from scratch. From the next compilation,
+only the modified files are recompiled — the rest are reused from previous build. Makefile uses
+file timestamps to detect which files are changed, so it saves time by avoiding unnecessary recompilation.
+
+\subsection*{7. Is there any Makefile mechanism for other programming languages? If it has, give an example?}
+\quad Yes, Makefile is not exclusive in C/C++. It can be used for any language or task that requires automation, e.g. \texttt{Python}, \texttt{JavaScript/TypeScript}, \texttt{PHP}...
+
+	

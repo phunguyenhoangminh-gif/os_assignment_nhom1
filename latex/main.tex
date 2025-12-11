@@ -1,0 +1,111 @@
+\documentclass[a4paper]{article}
+\usepackage[utf8]{vietnam}
+\usepackage{amssymb,gensymb,textcomp} 
+\usepackage{array,multicol,multirow,siunitx,tabularx}
+\usepackage{graphicx} 
+\usepackage{float}
+\usepackage{multicol}
+\usepackage{multirow}
+\usepackage{adjustbox}
+\usepackage{lipsum}
+\usepackage{makecell}
+\usepackage{enumerate}
+\usepackage{indentfirst}
+\usepackage{amsmath} 
+\usepackage{listings}
+\usepackage{diagbox}
+\usepackage{matlab-prettifier}
+\usepackage{xcolor}
+\usepackage{color}
+\definecolor{light-gray}{gray}{0.95}
+\newcommand{\code}[1]{\colorbox{light-gray}{\texttt{#1}}}
+\usepackage[small]{titlesec}
+\usepackage{amsfonts} 
+\usepackage{caption}
+\usepackage{tabularx}
+\usepackage{subcaption}
+\captionsetup{
+    font=small,           
+    labelfont=bf,        
+    labelsep=colon,       
+    justification=centering,
+}
+\usepackage{rotating}
+\usepackage{tikz}
+\usepackage[colorlinks = true,
+            linkcolor = black,
+            urlcolor  = blue,
+            citecolor = blue,
+            anchorcolor = blue]{hyperref}
+\usepackage{enumitem}
+\usepackage[left=2cm,right=2cm,top=2.5cm,bottom=2.5cm]{geometry} 
+\usepackage{scrextend}
+\usepackage{algorithm2e}
+\usepackage{etoolbox}
+\usepackage{ragged2e}
+\usepackage{minted}
+\usepackage{lastpage}
+\changefontsizes[23pt]{13pt}
+\usepackage{fancyhdr}
+\usepackage{tikz,tkz-tab}
+\usetikzlibrary{shapes.geometric, arrows}
+\usepackage[framemethod=TikZ]{mdframed}
+\usepackage{amsthm}
+\usepackage{xurl}
+\usepackage{commath}
+\usepackage{framed}
+\usepackage{commath}
+\usepackage{framed}
+\usepackage{enumitem}
+\usepackage{booktabs}
+% Cấu hình cho listings
+\lstset{
+    language=C,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny,
+    frame=single,
+    breaklines=true,
+    backgroundcolor=\color{light-gray},
+    captionpos=b
+}
+\renewcommand{\lstlistingname}{}
+\usepackage{listings}
+\DeclareCaptionFormat{listing}{\centering\normalsize#3}
+\usepackage{titlesec}
+\usepackage{url}
+\usepackage{anyfontsize}
+\setlength{\headheight}{38.2pt}
+\setlength{\headsep}{20pt}
+\setlength{\footskip}{30pt}
+\renewcommand{\footrulewidth}{0.4pt} 
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{} % clear all header fields
+\fancyhead[L]{
+ \begin{tabular}{rl}
+    \begin{picture}(15,15)(0,0)
+    \put(0,-8){\includegraphics[width=8.7mm, height=8.7mm]{picture/logobk.png}}
+   \end{picture}&
+	\begin{tabular}{l}
+		\textbf{\bf \ttfamily HO CHI MINH CITY UNIVERSITY OF TECHNOLOGY - VNU-HCM}
+             \\[-1.4ex] \textbf{\bf \ttfamily FACULTY OF COMPUTER SCIENCE AND ENGINEERING} 
+	\end{tabular} 
+ \end{tabular}
+}
+\fancyfoot{} % clear all footer fields
+\fancyfoot[L]{\footnotesize \ttfamily {Operating System LAB Report - HK251}}
+\fancyfoot[R]{\footnotesize \ttfamily {Trang {\thepage}/{\hypersetup{}\pageref{LastPage}}}}
+
+
+\begin{document}
+\renewcommand{\figurename}{Figure}
+\renewcommand{\tablename}{Table}
+\renewcommand{\contentsname}{Table of Contents}
+\include{content/coverpage}
+\include{content/members}
+\tableofcontents
+\end{document}
