@@ -1,18 +1,104 @@
-\section{Bộ lập lịch (Scheduler)}
+\section{Scheduler (Bộ lập lịch)}
 
-\subsection{Trả lời câu hỏi}
+\subsection{Trả lời câu hỏi lý thuyết}
 \textbf{Câu hỏi:} Những ưu điểm của việc sử dụng thuật toán lập lịch được mô tả trong bài tập này (Multi-Level Queue - MLQ) so với các thuật toán lập lịch khác là gì?
 
 \textbf{Trả lời:}
-Thuật toán Multi-Level Queue (MLQ) được sử dụng trong bài tập này mang lại nhiều ưu điểm so với các thuật toán đơn giản như FCFS hay Round Robin thuần túy:
+Thuật toán Multi-Level Queue (MLQ) mang lại nhiều ưu điểm so với các thuật toán đơn giản như FCFS hay Round Robin thuần túy:
 \begin{itemize}
     \item \textbf{Phân loại tiến trình:} MLQ cho phép phân loại các tiến trình dựa trên độ ưu tiên (priority). Các tiến trình quan trọng hoặc cần phản hồi nhanh có thể được đặt vào hàng đợi có độ ưu tiên cao hơn.
-    \item \textbf{Đảm bảo độ phản hồi:} Bằng cách luôn chọn tiến trình từ hàng đợi có độ ưu tiên cao nhất (nếu có), hệ thống đảm bảo các tác vụ quan trọng được xử lý ngay lập tức.
-    \item \textbf{Cơ chế Slot (Time Slicing):} Việc cấp phát một số lượng slot (thời gian CPU) nhất định cho mỗi hàng đợi (trong bài tập là \texttt{MAX\_PRIO - prio}) giúp ngăn chặn tình trạng "đói tài nguyên" (starvation) hoàn toàn cho các tiến trình độ ưu tiên thấp, đồng thời vẫn duy trì được sự ưu tiên cho các tiến trình quan trọng.
+    \item \textbf{Đảm bảo độ phản hồi (Responsiveness):} Bằng cách luôn chọn tiến trình từ hàng đợi có độ ưu tiên cao nhất (nếu có), hệ thống đảm bảo các tác vụ quan trọng được xử lý ngay lập tức.
+    \item \textbf{Cơ chế Slot (Time Slicing):} Việc cấp phát một số lượng slot (thời gian CPU) nhất định cho mỗi hàng đợi (\texttt{MAX\_PRIO - prio}) giúp ngăn chặn tình trạng "đói tài nguyên" (starvation) hoàn toàn cho các tiến trình độ ưu tiên thấp, đồng thời vẫn duy trì được sự ưu tiên cho các tiến trình quan trọng.
 \end{itemize}
 
-\subsection{Hiện thực}
+\subsection{Hiện thực (Implementation)}
 Hệ thống sử dụng mảng \texttt{mlq\_ready\_queue} gồm \texttt{MAX\_PRIO} (140) hàng đợi. Cơ chế lập lịch chính được hiện thực trong hàm \texttt{get\_mlq\_proc} tại file \texttt{sched.c}.
+
+\subsubsection{Gantt Diagram - MLQ Scheduling}
+
+Sơ đồ Gantt dưới đây minh họa cách MLQ scheduler phân bổ CPU cho các processes với độ ưu tiên khác nhau:
+
+\begin{center}
+\begin{tikzpicture}[scale=0.45]
+    % Ready Queues (vertical, on the left)
+    \node[font=\small,above] at (-3,8.5) {\textbf{Ready Queues}};
+    
+    % Queue boxes - increased vertical spacing
+    \foreach \y/\prio/\color in {7.5/0/red, 6/1/orange, 4.5/2/yellow, 3/3/green} {
+        \draw[thick] (-5,\y-0.4) rectangle (-1,\y+0.4);
+        \node[left] at (-5,\y) {\tiny PRIO=\prio};
+    }
+    
+    % Processes in queues (with much better spacing)
+    \node[draw,fill=red!40,minimum width=0.7cm,minimum height=0.5cm] at (-4.5,7.5) {\tiny P1};
+    \node[draw,fill=red!40,minimum width=0.7cm,minimum height=0.5cm] at (-2.8,7.5) {\tiny P2};
+    \node[draw,fill=orange!40,minimum width=0.7cm,minimum height=0.5cm] at (-4.5,6) {\tiny P3};
+    \node[draw,fill=yellow!60,minimum width=0.7cm,minimum height=0.5cm] at (-4.5,4.5) {\tiny P4};
+    \node[draw,fill=green!40,minimum width=0.7cm,minimum height=0.5cm] at (-4.5,3) {\tiny P5};
+    \node[draw,fill=green!40,minimum width=0.7cm,minimum height=0.5cm] at (-2.8,3) {\tiny P6};
+    
+    % Arrow from queues to CPU
+    \draw[->,thick,dashed] (-1,5.5) -- (0,2.5) node[midway,right,font=\tiny] {Dispatch};
+    
+    % CPU Timeline
+    \node[font=\small,above] at (12,3) {\textbf{CPU Execution}};
+    
+    % Timeline axis (extended to 24 units)
+    \draw[->] (0,0) -- (24,0) node[right] {Time};
+    \foreach \x in {0,2,4,6,8,10,12,14,16,18,20,22}
+        \draw (\x,0.1) -- (\x,-0.1) node[below] {\tiny \x};
+    
+    % CPU execution blocks (correct timeline with time quantum = 5)
+    \draw[fill=red!40] (0,0.5) rectangle (5,2) node[midway,font=\scriptsize] {P1};
+    \draw[fill=red!40] (5,0.5) rectangle (10,2) node[midway,font=\scriptsize] {P2};
+    \draw[fill=orange!40] (10,0.5) rectangle (15,2) node[midway,font=\scriptsize] {P3};
+    \draw[fill=yellow!60] (15,0.5) rectangle (18,2) node[midway,font=\scriptsize] {P4};
+    \draw[fill=green!40] (18,0.5) rectangle (20,2) node[midway,font=\scriptsize] {P5};
+    \draw[fill=green!40] (20,0.5) rectangle (21,2) node[midway,font=\scriptsize] {P6};
+    \draw[fill=red!40] (21,0.5) rectangle (24,2) node[midway,font=\scriptsize] {P1};
+    
+    % Annotations - moved down further
+    \node[align=center,font=\tiny] at (7.5,-2.5) {PRIO=0\\(Round-Robin)};
+    \draw[<-] (7.5,-2) -- (7.5,0.3);
+    
+    \node[align=center,font=\tiny] at (17,-2.5) {PRIO 1,2,3\\(theo thứ tự)};
+    \draw[<-] (17,-2) -- (17,0.3);
+\end{tikzpicture}
+\end{center}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{|c|c|c|c|c|p{4.5cm}|}
+\hline
+\textbf{Process} & \textbf{Prio} & \textbf{Slot} & \textbf{Burst} & \textbf{Time Quantum} & \textbf{Execution Pattern} \\ \hline
+P1 & 0 & 140 & 8 units & 5 + 3 & Time 0-5, 21-24 \\ \hline
+P2 & 0 & 140 & 5 units & 5 & Time 5-10 (completed) \\ \hline
+P3 & 1 & 139 & 5 units & 5 & Time 10-15 (completed) \\ \hline
+P4 & 2 & 138 & 3 units & 3 & Time 15-18 (completed) \\ \hline
+P5 & 3 & 137 & 2 units & 2 & Time 18-20 (completed) \\ \hline
+P6 & 3 & 137 & 1 unit & 1 & Time 20-21 (completed) \\ \hline
+\end{tabular}
+\caption{Chi tiết thực thi các processes trong MLQ Gantt diagram (Time Quantum = 5 units)}
+\end{table}
+
+\newpage
+\textbf{Thông tin các processes trong Gantt diagram:}
+\begin{itemize}
+    \item \textbf{Priority:} Giá trị nhỏ hơn = priority cao hơn (PRIO 0 > PRIO 3). MLQ scheduler luôn duyệt từ PRIO 0→139.
+    \item \textbf{Slot Allocation:} Công thức $slot[i] = MAX\_PRIO - i = 140 - i$. Quyết định số lần được chọn trong 1 round, KHÔNG ảnh hưởng đến time quantum.
+    \item \textbf{Burst Time:} Tổng thời gian CPU cần để hoàn thành process (giả định minh họa).
+    \item \textbf{Time Quantum:} Khoảng thời gian (5 units) mỗi lần process được CPU. Nếu burst time < 5, chạy hết remaining time.
+    \item \textbf{Execution Pattern:} Thời điểm cụ thể process được thực thi. P1 chạy 2 lần (0-5 và 21-24) do burst=8 > time quantum.
+\end{itemize}
+
+\textbf{Quan sát:}
+\begin{itemize}
+    \item \textbf{Ready Queues:} Bên trái hiển thị 4 mức độ ưu tiên (PRIO 0-3), mỗi queue chứa các processes tương ứng.
+    \item \textbf{CPU Timeline:} Cho thấy thứ tự thực thi - processes với PRIO cao (0) được nhiều CPU time hơn (P1, P2 có time slice dài nhất).
+    \item \textbf{Preemption:} Higher priority processes có thể preempt lower priority đang chạy. Scheduler luôn duyệt từ PRIO 0→139.
+    \item \textbf{Fairness:} Slot mechanism đảm bảo low-priority processes vẫn được CPU time, tránh starvation hoàn toàn.
+\end{itemize}
 
 \subsubsection{Cấu trúc dữ liệu}
 \begin{lstlisting}[language=C]
@@ -32,21 +118,21 @@ Trong đó:
 \end{itemize}
 
 \subsubsection{Giải thuật get\_mlq\_proc}
-Giải thuật được chia thành 2 giai đoạn:
+Giải thuật được chia thành 2 phases:
 
-\textbf{Giai đoạn 1: Lựa chọn dựa trên vị trí}
+\textbf{Phase 1: Slot-based Selection}
 \begin{enumerate}
     \item \textbf{Luôn duyệt từ priority 0 (highest) đến priority 139 (lowest)} để đảm bảo priority preemption.
-    \item Kiểm tra điều kiện: hàng đợi không rỗng VÀ còn slots available (\texttt{current\_slot[prio] < slot[prio]}).
-    \item Nếu thỏa mãn: dequeue process, tăng \texttt{current\_slot[prio]}, cập nhật \texttt{current\_prio}.
-    \item Dừng ngay khi tìm thấy process phù hợp.
+    \item Kiểm tra điều kiện: hàng đợi không rỗng và còn slots available (\texttt{current\_slot[prio] < slot[prio]}).
+    \item Nếu thỏa mãn: dequeue process, tăng \texttt{current\_slot[prio]}, update \texttt{current\_prio}.
+    \item Break ngay khi tìm thấy process phù hợp.
 \end{enumerate}
 
-\textbf{Giai đoạn 2: Tái lập \& Thử lại}
+\textbf{Phase 2: Reset \& Retry}
 
-Nếu Giai đoạn 1 không tìm thấy process (tất cả các vị trí đã hết):
+Nếu Phase 1 không tìm thấy process (tất cả slots đã hết):
 \begin{enumerate}
-    \item Tái thiết lập tất cả \texttt{current\_slot[]} về 0.
+    \item Reset tất cả \texttt{current\_slot[]} về 0.
     \item Thử lại từ priority 0, lần này bỏ qua điều kiện slot.
     \item Chọn process đầu tiên tìm được từ hàng đợi không rỗng.
 \end{enumerate}
@@ -94,9 +180,9 @@ struct pcb_t * get_mlq_proc(void) {
 
 \textbf{Đặc điểm thuật toán:}
 \begin{itemize}
-    \item \textbf{Priority preemption:} Mỗi lần chọn process, thuật toán duyệt từ priority 0 (highest) đến priority 139 (lowest), đảm bảo processes có mức độ ưu tiên cao hơn luôn được xử lý trước.
-    \item \textbf{Slot fairness:} Giai đoạn 2 được kích hoạt khi tất cả queues có processes đã hết vị trí, reset bộ đếm và bắt đầu round mới, ngăn đói tài nguyên (starvation) cho các processes có mức ưu tiên thấp hơn.
-    \item \textbf{Time complexity:} O(MAX\_PRIO) = O(140) = O(1) thời gian là một hằng số cho mỗi lần get process.
+    \item \textbf{Priority preemption:} Mỗi lần chọn process, thuật toán duyệt từ priority 0 (highest) đến priority 139 (lowest), đảm bảo processes có priority cao hơn luôn được xử lý trước.
+    \item \textbf{Slot fairness:} Phase 2 được kích hoạt khi tất cả queues có processes đã hết slots, reset bộ đếm và bắt đầu round mới, ngăn starvation cho low-priority processes.
+    \item \textbf{Time complexity:} O(MAX\_PRIO) = O(140) = O(1) constant time cho mỗi lần get process.
     \item \textbf{Thread-safe:} Sử dụng mutex lock bảo vệ critical section khi truy cập shared queues trong multi-CPU environment.
 \end{itemize}
 
