@@ -1,0 +1,408 @@
+\section{Memory Management (Quản lý bộ nhớ)}
+
+\subsection{Trả lời câu hỏi lý thuyết}
+\textbf{Câu hỏi 1:} Trong Simple OS này, thiết kế nhiều phân đoạn bộ nhớ (memory segments) có lợi ích gì?
+
+\textbf{Trả lời:} Thiết kế nhiều phân đoạn giúp phân tách không gian địa chỉ cho các mục đích khác nhau (như Code, Data, Heap, Stack). Điều này giúp bảo vệ bộ nhớ (ví dụ: không cho phép ghi vào vùng Code), quản lý sự tăng trưởng của bộ nhớ động (Heap) dễ dàng hơn thông qua việc điều chỉnh con trỏ \texttt{sbrk} mà không ảnh hưởng đến các vùng khác.
+
+\textbf{Câu hỏi 2:} Điều gì xảy ra nếu chia địa chỉ thành nhiều hơn 2 cấp trong hệ thống phân trang?
+
+\textbf{Trả lời:} Việc chia thành nhiều cấp (ví dụ 5 cấp trong MM64) cho phép hỗ trợ không gian địa chỉ ảo rất lớn (64-bit) mà không cần phải lưu trữ toàn bộ bảng trang liên tục trong bộ nhớ vật lý. Nó giúp tiết kiệm bộ nhớ cho bảng trang (sparse paging). Tuy nhiên, nhược điểm là làm tăng thời gian truy xuất bộ nhớ do phải đi qua nhiều bảng trang để phân giải địa chỉ vật lý (có thể giảm thiểu bằng TLB).
+
+\textbf{Câu hỏi 3:} Ưu/nhược điểm của phân đoạn kết hợp phân trang?
+
+\textbf{Trả lời:}
+\begin{itemize}
+    \item \textbf{Ưu điểm:} Kết hợp sự linh hoạt về mặt logic của phân đoạn (quản lý theo module, bảo vệ) với hiệu quả quản lý bộ nhớ vật lý của phân trang (giảm phân mảnh ngoài, không cần bộ nhớ vật lý liên tục).
+    \item \textbf{Nhược điểm:} Tăng độ phức tạp của phần cứng và phần mềm quản lý (cần cả bảng đoạn và bảng trang), tăng chi phí truy xuất (overhead).
+\end{itemize}
+
+\subsection{Hiện thực (Implementation)}
+Module quản lý bộ nhớ (Memory Management Unit - MMU) trong hệ điều hành mô phỏng được thiết kế dựa trên cơ chế phân trang (Paging), hỗ trợ không gian địa chỉ 64-bit (MM64) và thực hiện phân tách rõ ràng giữa không gian người dùng (User space) và không gian nhân (Kernel space).
+
+Hệ thống quản lý bộ nhớ được tổ chức thành 3 tầng chính:
+\begin{enumerate}
+    \item \textbf{User-space Library} (\texttt{libmem.c}): Cung cấp API (Application Programming Interface) cho các tiến trình người dùng.
+    \item \textbf{Virtual Memory Engine} (\texttt{mm-vm.c}, \texttt{mm64.c}): Quản lý vùng nhớ ảo, cấu trúc dữ liệu của tiến trình và ánh xạ địa chỉ.
+    \item \textbf{Physical Memory Abstraction} (\texttt{mm-memphy.c}): Quản lý các khung trang vật lý trên thiết bị RAM và SWAP.
+\end{enumerate}
+
+\subsection{Cơ chế Phân trang Đa cấp (Multi-level Paging - MM64)}
+Hệ thống sử dụng cơ chế phân trang 5 cấp để hỗ trợ không gian địa chỉ lớn của kiến trúc 64-bit. Việc hiện thực nằm chủ yếu trong tập tin \texttt{src/mm64.c} và \texttt{include/mm64.h}.
+
+\subsubsection{Cấu trúc địa chỉ ảo}
+Địa chỉ ảo 64-bit được phân giải thành các chỉ số (index) để truy cập vào các bảng phân trang tương ứng theo cấu trúc sau:
+\begin{itemize}
+    \item \textbf{PGD (Page Global Directory):} Bits 48-56.
+    \item \textbf{P4D (Page Level 4 Directory):} Bits 39-47.
+    \item \textbf{PUD (Page Upper Directory):} Bits 30-38.
+    \item \textbf{PMD (Page Middle Directory):} Bits 21-29.
+    \item \textbf{PT (Page Table):} Bits 12-20.
+    \item \textbf{Offset:} Bits 0-11 (Tương ứng kích thước trang 4KB).
+\end{itemize}
+
+\subsubsection{Hiện thực ánh xạ và Quản lý PTE}
+Hàm \texttt{get\_pd\_from\_pagenum} trong \texttt{mm64.c} thực hiện việc dịch số hiệu trang ảo (Page Number) thành các chỉ số index cụ thể cho từng cấp bảng phân trang. Quá trình này sử dụng các phép dịch bit (bit shifting) và mặt nạ bit (bit masking) được định nghĩa trong \texttt{mm64.h}.
+
+Các hàm quản lý Page Table Entry (PTE) như \texttt{pte\_set\_fpn} (thiết lập ánh xạ tới RAM) và \texttt{pte\_set\_swap} (thiết lập trạng thái swap) thao tác trực tiếp trên các bit của PTE để đánh dấu trạng thái:
+\begin{itemize}
+    \item \textbf{Present:} Trang đang tồn tại trong RAM.
+    \item \textbf{Swapped:} Trang đã bị đẩy ra thiết bị Swap.
+    \item \textbf{Dirty:} Trang đã bị chỉnh sửa.
+\end{itemize}
+Hàm \texttt{get\_pd\_from\_pagenum} thực hiện việc trích xuất các chỉ số (index) từ địa chỉ trang ảo để truy cập vào các cấp bảng trang tương ứng (PGD, P4D, PUD, PMD, PT).
+
+\begin{lstlisting}[caption={Hàm phân giải địa chỉ (src/mm64.c)}, label={lst:mm64}]
+int get_pd_from_pagenum(addr_t pgn, addr_t* pgd, addr_t* p4d, addr_t* pud, addr_t* pmd, addr_t* pt)
+{
+    /* Shift the address to get page num and perform the mapping */
+    // PAGING64_ADDR_PT_SHIFT = 12
+    return get_pd_from_address(pgn << PAGING64_ADDR_PT_SHIFT, 
+                               pgd, p4d, pud, pmd, pt);
+}
+
+int get_pd_from_address(addr_t addr, addr_t* pgd, addr_t* p4d, addr_t* pud, addr_t* pmd, addr_t* pt)
+{
+    /* Extract page directories using Bit Masking */
+    // Using bitwise AND to mask the bits and Right Shift to align
+    *pgd = (addr & PAGING64_ADDR_PGD_MASK) >> PAGING64_ADDR_PGD_LOBIT;
+    *p4d = (addr & PAGING64_ADDR_P4D_MASK) >> PAGING64_ADDR_P4D_LOBIT;
+    *pud = (addr & PAGING64_ADDR_PUD_MASK) >> PAGING64_ADDR_PUD_LOBIT;
+    *pmd = (addr & PAGING64_ADDR_PMD_MASK) >> PAGING64_ADDR_PMD_LOBIT;
+    *pt  = (addr & PAGING64_ADDR_PT_MASK)  >> PAGING64_ADDR_PT_LOBIT;
+
+    return 0;
+}
+\end{lstlisting}
+\subsection{Quản lý Bộ nhớ Ảo (Virtual Memory Areas - VMA)}
+Việc quản lý không gian nhớ ảo của một tiến trình được thực hiện thông qua cấu trúc \texttt{vm\_area\_struct} và \texttt{vm\_rg\_struct} trong \texttt{src/mm-vm.c}.
+
+\subsubsection{Cấu trúc dữ liệu}
+\begin{itemize}
+    \item \texttt{vm\_area\_struct}: Đại diện cho một phân đoạn bộ nhớ lớn (ví dụ: Heap, Stack). Cấu trúc này quản lý giới hạn của vùng nhớ (\texttt{vm\_start}, \texttt{vm\_end}) và con trỏ \texttt{sbrk} hiện tại.
+    \item \texttt{vm\_rg\_struct} (Region): Đại diện cho một vùng nhớ nhỏ được cấp phát cho một biến hoặc một mảng cụ thể nằm bên trong VMA.
+\end{itemize}
+
+\subsubsection{Cơ chế mở rộng vùng nhớ}
+Khi tiến trình yêu cầu cấp phát bộ nhớ vượt quá giới hạn hiện tại của \texttt{sbrk}, hàm \texttt{inc\_vma\_limit} sẽ được gọi để thực hiện các bước:
+\begin{enumerate}
+    \item Tăng giá trị \texttt{sbrk} và \texttt{vm\_end} lên một lượng \texttt{inc\_sz}.
+    \item Kiểm tra xem việc mở rộng có bị chồng lấn (overlap) với các VMA khác hay không.
+    \item Gọi hàm \texttt{vm\_map\_ram} để ánh xạ vùng địa chỉ ảo mới mở rộng này vào các khung trang vật lý thực tế.
+\end{enumerate}
+
+\subsection{Quy trình Cấp phát và Giải phóng (Alloc/Free Flow)}
+Quy trình cấp phát bộ nhớ (\texttt{alloc}) và giải phóng (\texttt{free}) thể hiện sự tương tác chặt chẽ giữa User space và Kernel space.
+
+\subsubsection{Cấp phát (\texttt{liballoc} $\rightarrow$ \texttt{\_\_alloc})}
+\begin{enumerate}
+    \item Tiến trình gọi hàm \texttt{alloc}. Thư viện \texttt{libmem} kiểm tra danh sách các vùng nhớ trống (\texttt{vm\_freerg\_list}) xem có vùng nào tái sử dụng được không.
+    \item Nếu không có vùng trống phù hợp, nó tính toán kích thước cần thiết và gọi System Call (\texttt{SYSMEM\_INC\_OP}) để yêu cầu kernel mở rộng vùng nhớ.
+    \item Kernel (thông qua \texttt{sys\_mem.c} $\rightarrow$ \texttt{mm-vm.c}) thực hiện \texttt{inc\_vma\_limit}, tìm khung trang trống trong RAM thông qua \texttt{alloc\_pages\_range}, và cập nhật bảng phân trang qua \texttt{vmap\_page\_range}.
+    \item Địa chỉ khởi đầu của vùng nhớ mới được trả về và lưu vào thanh ghi của tiến trình.
+\end{enumerate}
+Khi tiến trình cần thêm bộ nhớ (Alloc), hàm \texttt{inc\_vma\_limit} sẽ mở rộng giới hạn \texttt{sbrk} và ánh xạ vùng nhớ ảo mới vào RAM.
+
+\begin{lstlisting}[caption={Mở rộng VMA (src/mm-vm.c)}, label={lst:incvma}]
+int inc_vma_limit(struct pcb_t *caller, int vmaid, addr_t inc_sz)
+{
+  // ... Retrieve VMA descriptor ...
+  
+  // Calculate new limit boundaries
+  addr_t old_sbrk = cur_vma->sbrk;
+  addr_t new_end = old_sbrk + inc_amt;
+
+  // Update VMA boundaries in descriptor
+  cur_vma->vm_end = new_end;
+  cur_vma->sbrk = new_end;
+
+  // ... Check for Overlap with other VM Areas ...
+
+  // Map physical memory for the new virtual area
+  struct vm_rg_struct newrg;
+  newrg.rg_start = old_sbrk;
+  newrg.rg_end = new_end;
+
+  if (vm_map_ram(caller, newrg.rg_start, newrg.rg_end, 
+                 old_sbrk, incnumpage, &newrg) < 0)
+  {
+    // Error handling (Rollback changes)
+    return -1;
+  }
+  return 0;
+}
+\end{lstlisting}
+\subsubsection{Giải phóng (\texttt{libfree} $\rightarrow$ \texttt{\_\_free})}
+Hệ thống không thu hồi ngay lập tức khung trang vật lý để tránh hiện tượng phân mảnh và chi phí cấp phát lại. Thay vào đó, vùng nhớ (\texttt{vm\_rg\_struct}) được đưa vào danh sách \texttt{vm\_freerg\_list} để có thể tái sử dụng cho các yêu cầu \texttt{alloc} sau này có kích thước tương thích.
+
+\subsection{Truy cập Bộ nhớ và Cơ chế Swap}
+Các thao tác đọc/ghi dữ liệu (\texttt{libread}, \texttt{libwrite}) được xử lý để đảm bảo tính trong suốt của bộ nhớ ảo đối với người dùng.
+
+\subsubsection{Truy cập và chuyển đổi địa chỉ}
+Hàm \texttt{pg\_getval} và \texttt{pg\_setval} chịu trách nhiệm chuyển đổi địa chỉ ảo sang địa chỉ vật lý bằng cách tra cứu bảng trang.
+
+\subsubsection{Xử lý Page Fault}
+Trong hàm \texttt{pg\_getpage}, nếu trang truy cập không có trong RAM (bit Present = 0), hệ thống sẽ xử lý như sau:
+\begin{enumerate}
+    \item Nếu trang đang ở Swap (bit Swapped = 1), hệ thống thực hiện \textbf{Swap In}:
+    \begin{itemize}
+        \item Tìm một khung trang trống trong RAM.
+        \item Nếu RAM đầy, thực hiện thuật toán thay thế trang (Victim Page Selection) để đẩy một trang khác ra Swap (\textbf{Swap Out}).
+        \item Dùng \texttt{syscall} (\texttt{SYSMEM\_SWP\_OP}) để di chuyển dữ liệu thực tế giữa thiết bị RAM và thiết bị Swap.
+    \end{itemize}
+    \item Cập nhật lại Page Table Entry (PTE) để trỏ tới khung trang mới trong RAM và thiết lập bit Present.
+\end{enumerate}
+Hàm \texttt{pg\_getpage} kiểm tra tính hiện hữu của trang. Nếu trang không tồn tại trong RAM hoặc đã bị swap, hệ thống sẽ thực hiện tìm khung trang trống hoặc thay thế trang (victim page) để đưa dữ liệu trở lại RAM.
+
+\begin{lstlisting}[caption={Xử lý Page Fault và Swap (src/libmem.c)}, label={lst:pg_getpage}]
+int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
+{
+  uint32_t pte = pte_get_entry(caller, pgn);
+
+  // Check if page is NOT present in RAM (Page Fault)
+  if (!PAGING_PAGE_PRESENT(pte))
+  { 
+    addr_t tgtfpn;
+    // 1. Try to obtain a Free Frame in RAM
+    if (MEMPHY_get_freefp(caller->krnl->mram, &tgtfpn) == 0)
+    {
+      // If page is currently in Swap, perform Swap In
+      if (pte != 0 && (pte & PAGING_PTE_SWAPPED_MASK))
+      {
+        addr_t old_swpfpn = PAGING_SWP(pte);
+        // ... Call syscall SYSMEM_SWP_OP to copy data from Swap to RAM ...
+        MEMPHY_put_freefp(caller->krnl->active_mswp, old_swpfpn);
+      }
+      // Map the page to the newly found frame
+      pte_set_fpn(caller, pgn, tgtfpn);
+    }
+    else // 2. RAM is full, must find a Victim Page to Swap Out
+    {
+      addr_t vicpgn, swpfpn, vicfpn;
+      // Find victim page (using FIFO strategy)
+      if (find_victim_page(caller->mm, &vicpgn) == -1) return -1;
+      
+      // Get a free frame in Swap device
+      if (MEMPHY_get_freefp(caller->krnl->active_mswp, &swpfpn) == -1) return -1;
+
+      // ... Perform Swap Out: Copy victim page data to Swap ...
+      
+      // ... Update PTE for victim page (mark as Swapped, update Swap Offset) ...
+      pte_set_swap(caller, vicpgn, 0, swpfpn);
+
+      // Reclaim the victim's frame (tgtfpn) for the current page
+      tgtfpn = vicfpn;
+      pte_set_fpn(caller, pgn, tgtfpn);
+    }
+    // Add to FIFO list for future page replacement management
+    enlist_pgn_node(&caller->mm->fifo_pgn, pgn);
+  }
+  return 0;
+}
+\end{lstlisting}
+\subsection{Giao tiếp qua System Call}
+Để đảm bảo an toàn và tính toàn vẹn của hệ thống, các thao tác nhạy cảm như mở rộng vùng nhớ hay truy cập thiết bị vật lý không được thực hiện trực tiếp từ User space.
+
+\begin{itemize}
+    \item \texttt{libmem.c}: Đóng vai trò là wrapper, đóng gói các tham số vào thanh ghi và gọi \texttt{syscall} với mã 17 (\texttt{memmap}).
+    \item \texttt{sys\_mem.c} (Kernel side): Nhận yêu cầu từ system call, phân loại dựa trên thanh ghi \texttt{regs->a1} (ví dụ: \texttt{SYSMEM\_INC\_OP}, \texttt{SYSMEM\_IO\_READ}) và gọi các hàm xử lý tương ứng trong nhân.
+\end{itemize}
+
+\subsection{Kết luận}
+Module Memory Management đã hiện thực thành công cơ chế quản lý bộ nhớ hiện đại với phân trang đa cấp 64-bit. Thiết kế hỗ trợ đầy đủ bộ nhớ ảo, cơ chế hoán đổi (swapping) khi thiếu bộ nhớ vật lý, và bảo vệ tài nguyên hệ thống thông qua cơ chế System Call, cho phép hệ điều hành mô phỏng quản lý hiệu quả tài nguyên bộ nhớ cho đa tiến trình.
+
+\subsection{Kết quả chạy thử nghiệm}
+\textbf{Input:} \texttt{os\_1\_mlq\_paging\_small\_4K}
+\textbf{Output (Trích xuất):}
+\begin{verbatim}
+Time slot   0
+ld_routine
+Time slot   1
+        Loaded a process at input/proc/p0s, PID: 1 PRIO: 130
+Time slot   2
+        CPU 3: Dispatched process  1
+        Loaded a process at input/proc/s3, PID: 2 PRIO: 39
+liballoc:136
+Time slot   3
+        CPU 2: Dispatched process  2
+print_pgtbl:
+ PDG=0x73bfe4001820 P4g=0x73bfe4002830 PUD=0x73bfe4003840 PMD=0x73bfe4004850
+        CPU 3: Put process  1 to run queue
+        CPU 3: Dispatched process  1
+Time slot   4
+liballoc:136
+print_pgtbl:
+ PDG=0x73bfe4001820 P4g=0x73bfe4002830 PUD=0x73bfe4003840 PMD=0x73bfe4004850
+        Loaded a process at input/proc/m1s, PID: 3 PRIO: 15
+libfree:155
+print_pgtbl:
+ PDG=0x73bfe4001820 P4g=0x73bfe4002830 PUD=0x73bfe4003840 PMD=0x73bfe4004850
+        CPU 2: Put process  2 to run queue
+        CPU 2: Dispatched process  3
+liballoc:136
+print_pgtbl:
+ PDG=0x73bfe400d0a0 P4g=0x73bfe400e0b0 PUD=0x73bfe400f0c0 PMD=0x73bfe40100d0
+        CPU 1: Dispatched process  2
+Time slot   5
+Time slot   6
+liballoc:136
+print_pgtbl:
+ PDG=0x73bfe400d0a0 P4g=0x73bfe400e0b0 PUD=0x73bfe400f0c0 PMD=0x73bfe40100d0
+        CPU 3: Put process  1 to run queue
+        CPU 3: Dispatched process  1
+liballoc:136
+print_pgtbl:
+ PDG=0x73bfe4001820 P4g=0x73bfe4002830 PUD=0x73bfe4003840 PMD=0x73bfe4004850
+        Loaded a process at input/proc/s2, PID: 4 PRIO: 120
+Time slot   7
+        CPU 1: Put process  2 to run queue
+libwrite:330
+print_pgtbl:
+ PDG=0x73bfe4001820 P4g=0x73bfe4002830 PUD=0x73bfe4003840 PMD=0x73bfe4004850
+        CPU 1: Dispatched process  2
+        CPU 0: Dispatched process  4
+        CPU 2: Put process  3 to run queue
+        CPU 2: Dispatched process  3
+libfree:155
+print_pgtbl:
+ PDG=0x73bfe400d0a0 P4g=0x73bfe400e0b0 PUD=0x73bfe400f0c0 PMD=0x73bfe40100d0
+        Loaded a process at input/proc/m0s, PID: 5 PRIO: 120
+        CPU 3: Put process  1 to run queue
+        CPU 3: Dispatched process  5
+liballoc:136
+liballoc:136
+print_pgtbl:
+ PDG=0x73bfe400d0a0 P4g=0x73bfe400e0b0 PUD=0x73bfe400f0c0 PMD=0x73bfe40100d0
+print_pgtbl:
+ PDG=0x73bfe4018950 P4g=0x73bfe4019960 PUD=0x73bfe401a970 PMD=0x73bfe401b980
+Time slot   8
+        CPU 2: Put process  3 to run queue
+        CPU 2: Dispatched process  3
+libfree:155
+print_pgtbl:
+ PDG=0x73bfe400d0a0 P4g=0x73bfe400e0b0 PUD=0x73bfe400f0c0 PMD=0x73bfe40100d0
+        CPU 1: Put process  2 to run queue
+        CPU 1: Dispatched process  2
+Time slot   9
+        CPU 0: Put process  4 to run queue
+        CPU 0: Dispatched process  4
+liballoc:136
+print_pgtbl:
+ PDG=0x73bfe4018950 P4g=0x73bfe4019960 PUD=0x73bfe401a970 PMD=0x73bfe401b980
+        Loaded a process at input/proc/p1s, PID: 6 PRIO: 15
+        CPU 3: Put process  5 to run queue
+        CPU 3: Dispatched process  6
+Time slot  10
+libfree:155
+print_pgtbl:
+ PDG=0x73bfe400d0a0 P4g=0x73bfe400e0b0 PUD=0x73bfe400f0c0 PMD=0x73bfe40100d0
+        CPU 2: Processed  3 has finished
+Time slot  11
+        CPU 0: Put process  4 to run queue
+        CPU 0: Dispatched process  4
+        CPU 1: Put process  2 to run queue
+        CPU 1: Dispatched process  2
+        CPU 2: Dispatched process  5
+libfree:155
+print_pgtbl:
+ PDG=0x73bfe4018950 P4g=0x73bfe4019960 PUD=0x73bfe401a970 PMD=0x73bfe401b980
+        Loaded a process at input/proc/s0, PID: 7 PRIO: 38
+        CPU 3: Put process  6 to run queue
+        CPU 3: Dispatched process  6
+liballoc:136
+print_pgtbl:
+ PDG=0x73bfe4018950 P4g=0x73bfe4019960 PUD=0x73bfe401a970 PMD=0x73bfe401b980
+Time slot  12
+Time slot  13
+        CPU 1: Put process  2 to run queue
+        CPU 0: Put process  4 to run queue
+        CPU 0: Dispatched process  7
+        CPU 2: Put process  5 to run queue
+        CPU 2: Dispatched process  4
+        CPU 1: Dispatched process  2
+        CPU 3: Put process  6 to run queue
+        CPU 1: Processed  2 has finished
+        CPU 3: Dispatched process  6
+Time slot  14
+        CPU 1: Dispatched process  5
+libwrite:330
+print_pgtbl:
+ PDG=0x73bfe4018950 P4g=0x73bfe4019960 PUD=0x73bfe401a970 PMD=0x73bfe401b980
+        CPU 2: Put process  4 to run queue
+        CPU 2: Dispatched process  4
+Time slot  15
+libwrite:330
+print_pgtbl:
+ PDG=0x73bfe4018950 P4g=0x73bfe4019960 PUD=0x73bfe401a970 PMD=0x73bfe401b980
+        CPU 0: Put process  7 to run queue
+        CPU 0: Dispatched process  7
+        CPU 3: Put process  6 to run queue
+        CPU 3: Dispatched process  6
+Time slot  16
+        CPU 1: Processed  5 has finished
+        CPU 1: Dispatched process  1
+libread:296
+        Loaded a process at input/proc/s1, PID: 8 PRIO: 0
+Time slot  17
+libwrite:330
+        CPU 2: Put process  4 to run queue
+        CPU 2: Dispatched process  8
+        CPU 0: Put process  7 to run queue
+        CPU 0: Dispatched process  7
+print_pgtbl:
+ PDG=0x73bfe4001820 P4g=0x73bfe4002830 PUD=0x73bfe4003840 PMD=0x73bfe4004850
+Time slot  18
+        CPU 1: Put process  1 to run queue
+        CPU 1: Dispatched process  4
+        CPU 3: Put process  6 to run queue
+        CPU 3: Dispatched process  6
+        CPU 2: Put process  8 to run queue
+        CPU 0: Put process  7 to run queue
+Time slot  19
+        CPU 0: Dispatched process  7
+        CPU 2: Dispatched process  8
+        CPU 3: Processed  6 has finished
+        CPU 3: Dispatched process  1
+libread:296
+Time slot  20
+        CPU 1: Processed  4 has finished
+        CPU 1 stopped
+libwrite:330
+print_pgtbl:
+ PDG=0x73bfe4001820 P4g=0x73bfe4002830 PUD=0x73bfe4003840 PMD=0x73bfe4004850
+        CPU 2: Put process  8 to run queue
+        CPU 0: Put process  7 to run queue
+        CPU 0: Dispatched process  7
+Time slot  21
+        CPU 2: Dispatched process  8
+        CPU 3: Put process  1 to run queue
+        CPU 3: Dispatched process  1
+libread:296
+Time slot  22
+Time slot  23
+        CPU 2: Put process  8 to run queue
+        CPU 2: Dispatched process  8
+        CPU 0: Put process  7 to run queue
+        CPU 0: Dispatched process  7
+Time slot  24
+        CPU 2: Processed  8 has finished
+        CPU 2 stopped
+        CPU 3: Put process  1 to run queue
+        CPU 3: Dispatched process  1
+libfree:155
+print_pgtbl:
+ PDG=0x73bfe4001820 P4g=0x73bfe4002830 PUD=0x73bfe4003840 PMD=0x73bfe4004850
+Time slot  25
+        CPU 0: Put process  7 to run queue
+        CPU 0: Dispatched process  7
+Time slot  26
+        CPU 3: Processed  1 has finished
+        CPU 3 stopped
+Time slot  27
+        CPU 0: Put process  7 to run queue
+        CPU 0: Dispatched process  7
+Time slot  28
+        CPU 0: Processed  7 has finished
+        CPU 0 stopped
+\end{verbatim}
+\textbf{Nhận xét:} Log hiển thị địa chỉ của các bảng trang ở các cấp khác nhau (PDG, P4g, PUD, PMD). Điều này chứng tỏ hệ thống phân trang 5 cấp đã được khởi tạo và liên kết chính xác cho tiến trình.
