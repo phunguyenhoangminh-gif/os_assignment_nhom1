@@ -1,17 +1,17 @@
-\section{Scheduler}
+\section{Bộ lập lịch (Scheduler)}
 
-\subsection{Trả lời câu hỏi lý thuyết}
+\subsection{Trả lời câu hỏi}
 \textbf{Câu hỏi:} Những ưu điểm của việc sử dụng thuật toán lập lịch được mô tả trong bài tập này (Multi-Level Queue - MLQ) so với các thuật toán lập lịch khác là gì?
 
 \textbf{Trả lời:}
 Thuật toán Multi-Level Queue (MLQ) được sử dụng trong bài tập này mang lại nhiều ưu điểm so với các thuật toán đơn giản như FCFS hay Round Robin thuần túy:
 \begin{itemize}
     \item \textbf{Phân loại tiến trình:} MLQ cho phép phân loại các tiến trình dựa trên độ ưu tiên (priority). Các tiến trình quan trọng hoặc cần phản hồi nhanh có thể được đặt vào hàng đợi có độ ưu tiên cao hơn.
-    \item \textbf{Đảm bảo độ phản hồi (Responsiveness):} Bằng cách luôn chọn tiến trình từ hàng đợi có độ ưu tiên cao nhất (nếu có), hệ thống đảm bảo các tác vụ quan trọng được xử lý ngay lập tức.
+    \item \textbf{Đảm bảo độ phản hồi:} Bằng cách luôn chọn tiến trình từ hàng đợi có độ ưu tiên cao nhất (nếu có), hệ thống đảm bảo các tác vụ quan trọng được xử lý ngay lập tức.
     \item \textbf{Cơ chế Slot (Time Slicing):} Việc cấp phát một số lượng slot (thời gian CPU) nhất định cho mỗi hàng đợi (trong bài tập là \texttt{MAX\_PRIO - prio}) giúp ngăn chặn tình trạng "đói tài nguyên" (starvation) hoàn toàn cho các tiến trình độ ưu tiên thấp, đồng thời vẫn duy trì được sự ưu tiên cho các tiến trình quan trọng.
 \end{itemize}
 
-\subsection{Hiện thực (Implementation)}
+\subsection{Hiện thực}
 Hệ thống sử dụng mảng \texttt{mlq\_ready\_queue} gồm \texttt{MAX\_PRIO} (140) hàng đợi. Cơ chế lập lịch chính được hiện thực trong hàm \texttt{get\_mlq\_proc} tại file \texttt{sched.c}.
 
 \subsubsection{Cấu trúc dữ liệu}
@@ -32,21 +32,21 @@ Trong đó:
 \end{itemize}
 
 \subsubsection{Giải thuật get\_mlq\_proc}
-Giải thuật được chia thành 2 phases:
+Giải thuật được chia thành 2 giai đoạn:
 
-\textbf{Phase 1: Slot-based Selection}
+\textbf{Giai đoạn 1: Lựa chọn dựa trên vị trí}
 \begin{enumerate}
     \item \textbf{Luôn duyệt từ priority 0 (highest) đến priority 139 (lowest)} để đảm bảo priority preemption.
     \item Kiểm tra điều kiện: hàng đợi không rỗng VÀ còn slots available (\texttt{current\_slot[prio] < slot[prio]}).
-    \item Nếu thỏa mãn: dequeue process, tăng \texttt{current\_slot[prio]}, update \texttt{current\_prio}.
-    \item Break ngay khi tìm thấy process phù hợp.
+    \item Nếu thỏa mãn: dequeue process, tăng \texttt{current\_slot[prio]}, cập nhật \texttt{current\_prio}.
+    \item Dừng ngay khi tìm thấy process phù hợp.
 \end{enumerate}
 
-\textbf{Phase 2: Reset \& Retry}
+\textbf{Giai đoạn 2: Tái lập \& Thử lại}
 
-Nếu Phase 1 không tìm thấy process (tất cả slots đã hết):
+Nếu Giai đoạn 1 không tìm thấy process (tất cả các vị trí đã hết):
 \begin{enumerate}
-    \item Reset tất cả \texttt{current\_slot[]} về 0.
+    \item Tái thiết lập tất cả \texttt{current\_slot[]} về 0.
     \item Thử lại từ priority 0, lần này bỏ qua điều kiện slot.
     \item Chọn process đầu tiên tìm được từ hàng đợi không rỗng.
 \end{enumerate}
@@ -94,9 +94,9 @@ struct pcb_t * get_mlq_proc(void) {
 
 \textbf{Đặc điểm thuật toán:}
 \begin{itemize}
-    \item \textbf{Priority preemption:} Mỗi lần chọn process, thuật toán duyệt từ priority 0 (highest) đến priority 139 (lowest), đảm bảo processes có priority cao hơn luôn được xử lý trước.
-    \item \textbf{Slot fairness:} Phase 2 được kích hoạt khi tất cả queues có processes đã hết slots, reset bộ đếm và bắt đầu round mới, ngăn starvation cho low-priority processes.
-    \item \textbf{Time complexity:} O(MAX\_PRIO) = O(140) = O(1) constant time cho mỗi lần get process.
+    \item \textbf{Priority preemption:} Mỗi lần chọn process, thuật toán duyệt từ priority 0 (highest) đến priority 139 (lowest), đảm bảo processes có mức độ ưu tiên cao hơn luôn được xử lý trước.
+    \item \textbf{Slot fairness:} Giai đoạn 2 được kích hoạt khi tất cả queues có processes đã hết vị trí, reset bộ đếm và bắt đầu round mới, ngăn đói tài nguyên (starvation) cho các processes có mức ưu tiên thấp hơn.
+    \item \textbf{Time complexity:} O(MAX\_PRIO) = O(140) = O(1) thời gian là một hằng số cho mỗi lần get process.
     \item \textbf{Thread-safe:} Sử dụng mutex lock bảo vệ critical section khi truy cập shared queues trong multi-CPU environment.
 \end{itemize}
 
