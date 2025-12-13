@@ -26,7 +26,79 @@ Hệ thống quản lý bộ nhớ được tổ chức thành 3 tầng chính:
     \item \textbf{Virtual Memory Engine} (\texttt{mm-vm.c}, \texttt{mm64.c}): Quản lý vùng nhớ ảo, cấu trúc dữ liệu của tiến trình và ánh xạ địa chỉ.
     \item \textbf{Physical Memory Abstraction} (\texttt{mm-memphy.c}): Quản lý các khung trang vật lý trên thiết bị RAM và SWAP.
 \end{enumerate}
+\subsection{Mô phỏng Phần cứng Bộ nhớ (Physical Memory Abstraction)}
+Tầng thấp nhất trong hệ thống quản lý bộ nhớ là module \texttt{mm-memphy.c}. Module này chịu trách nhiệm mô phỏng hành vi của các thiết bị lưu trữ vật lý như RAM và thiết bị Swap, che giấu các chi tiết phần cứng phức tạp khỏi các tầng trên.
 
+\subsubsection{Tổ chức Khung trang (Frame Organization)}
+Bộ nhớ vật lý không được quản lý theo từng byte riêng lẻ mà được chia thành các khối cố định gọi là \textbf{khung trang (page frames)}.
+\begin{itemize}
+    \item \textbf{Cấu trúc \texttt{memphy\_struct}:} Đại diện cho một thiết bị vật lý (một thanh RAM hoặc một phân vùng Swap). Nó chứa mảng byte \texttt{storage} (dữ liệu thực) và các danh sách quản lý khung trang.
+    \item \textbf{Quản lý khung trống:} Hệ thống sử dụng một danh sách liên kết đơn (\texttt{free\_fp\_list}) để theo dõi các khung trang chưa được sử dụng. Mỗi node trong danh sách là một cấu trúc \texttt{framephy\_struct} chứa chỉ số khung (FPN - Frame Page Number).
+\end{itemize}
+
+\subsubsection{Cơ chế Định dạng và Quản lý Khung}
+Khi hệ thống khởi động, hàm \texttt{init\_memphy} sẽ cấp phát vùng nhớ cho thiết bị và gọi hàm \texttt{MEMPHY\_format} để khởi tạo danh sách các khung trang trống.
+
+\begin{lstlisting}[caption={Định dạng bộ nhớ thành danh sách khung (src/mm-memphy.c)}, label={lst:memphy_format}]
+int MEMPHY_format(struct memphy_struct *mp, int pagesz)
+{
+   // Calculate total number of frames based on device size
+   int numfp = mp->maxsz / pagesz;
+   struct framephy_struct *newfst, *fst;
+   int iter = 0;
+
+   if (numfp <= 0) return -1;
+
+   // Initialize the first node of the free list
+   fst = malloc(sizeof(struct framephy_struct));
+   fst->fpn = iter;
+   mp->free_fp_list = fst;
+
+   // Create a linked list of free page frames
+   for (iter = 1; iter < numfp; iter++)
+   {
+      newfst = malloc(sizeof(struct framephy_struct));
+      newfst->fpn = iter;     // Assign Frame Page Number (0, 1, 2...)
+      newfst->fp_next = NULL;
+      fst->fp_next = newfst;  // Link previous node to current node
+      fst = newfst;
+   }
+
+   return 0;
+}
+\end{lstlisting}
+
+Các thao tác cấp phát (\texttt{MEMPHY\_get\_freefp}) và thu hồi (\texttt{MEMPHY\_put\_freefp}) khung trang chỉ đơn giản là các thao tác lấy node từ đầu danh sách hoặc thêm node vào đầu danh sách (stack-like operation), đảm bảo độ phức tạp $O(1)$.
+
+\subsubsection{Truy cập Dữ liệu Vật lý (Physical Access)}
+Module hỗ trợ hai chế độ truy cập thiết bị mô phỏng hành vi thực tế của phần cứng:
+\begin{enumerate}
+    \item \textbf{Random Access (RAM):} Cho phép truy cập trực tiếp vào bất kỳ địa chỉ nào thông qua chỉ số mảng (index). Đây là chế độ mặc định cho RAM.
+    \item \textbf{Sequential Access (Serial/Tape):} Mô phỏng các thiết bị truy cập tuần tự (như băng từ hoặc một số loại bộ nhớ cũ), nơi con trỏ đọc/ghi phải di chuyển (`cursor`) đến vị trí cần thiết.
+\end{enumerate}
+
+\begin{lstlisting}[caption={Đọc dữ liệu từ bộ nhớ vật lý (src/mm-memphy.c)}, label={lst:memphy_read}]
+int MEMPHY_read(struct memphy_struct *mp, addr_t addr, BYTE *value)
+{
+   if (mp == NULL) return -1;
+
+   // Random Access Mode (RAM)
+   if (mp->rdmflg) {
+      if (addr >= mp->maxsz) return -1; // Boundary check
+      *value = mp->storage[addr];       // Direct access
+   }
+   else 
+   {
+      // Sequential Access Mode (Tape/Serial)
+      // Must move the cursor to the required address
+      return MEMPHY_seq_read(mp, addr, value);
+   }
+
+   return 0;
+}
+\end{lstlisting}
+
+Việc trừu tượng hóa này cho phép các tầng trên (như Virtual Memory Engine) tương tác với RAM và Swap theo cùng một giao diện nhất quán, bất kể bản chất vật lý của thiết bị lưu trữ bên dưới.
 \subsection{Cơ chế Phân trang Đa cấp (Multi-level Paging - MM64)}
 Hệ thống sử dụng cơ chế phân trang 5 cấp để hỗ trợ không gian địa chỉ lớn của kiến trúc 64-bit. Việc hiện thực nằm chủ yếu trong tập tin \texttt{src/mm64.c} và \texttt{include/mm64.h}.
 
