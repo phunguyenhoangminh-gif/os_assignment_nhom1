@@ -280,7 +280,7 @@ int pg_getpage(struct mm_struct *mm, int pgn, int *fpn, struct pcb_t *caller)
     \item \texttt{sys\_mem.c} (Kernel side): Nhận yêu cầu từ system call, phân loại dựa trên thanh ghi \texttt{regs->a1} (ví dụ: \texttt{SYSMEM\_INC\_OP}, \texttt{SYSMEM\_IO\_READ}) và gọi các hàm xử lý tương ứng trong nhân.
 \end{itemize}
 
-\subsection{Kết luận}
+\subsection{Kết quả chạy thử nghiệm}
 Module Memory Management đã hiện thực thành công cơ chế quản lý bộ nhớ hiện đại với phân trang đa cấp 64-bit. Thiết kế hỗ trợ đầy đủ bộ nhớ ảo, cơ chế hoán đổi (swapping) khi thiếu bộ nhớ vật lý, và bảo vệ tài nguyên hệ thống thông qua cơ chế System Call, cho phép hệ điều hành mô phỏng quản lý hiệu quả tài nguyên bộ nhớ cho đa tiến trình.
 
 \subsubsection{Test Case 1: Cấp phát bộ nhớ cơ bản (os\_1\_mlq\_paging\_small\_4K)}
@@ -291,7 +291,7 @@ Module Memory Management đã hiện thực thành công cơ chế quản lý b�
     \begin{verbatim}
 Loaded a process at input/proc/p0s, PID: 1 PRIO: 130
 ...
-liballoc: 178
+liballoc: 136
 print_pgtbl:
  PDG=0x... P4g=0x... PUD=0x... PMD=0x...
     \end{verbatim}
@@ -309,7 +309,7 @@ print_pgtbl:
     \item \textbf{Phân tích Log:}
     \begin{verbatim}
 [Time slot X]
-liballoc: 178
+liballoc: 136
 ...
 // Khi RAM đầy, hệ thống tìm Victim Page và Swap Out
 MEMPHY_put_freefp(active_mswp, ...) 
@@ -332,7 +332,7 @@ MEMPHY_put_freefp(active_mswp, ...)
     \item \textbf{Memory:} Sử dụng \texttt{mmvm\_lock} (trong \texttt{libmem.c}) và \texttt{frfm\_lock} (trong các thao tác cấp phát khung trang) để bảo vệ danh sách khung trang trống và các cấu trúc dữ liệu bộ nhớ ảo.
 \end{itemize}
 
-\subsection{Testcase}
+\subsection{Kết quả chạy thử nghiệm}
 Khi chạy testcase \texttt{os\_1\_mlq\_paging} với cấu hình 4 CPU (Rút gọn output):
 \begin{verbatim}
 Time slot   0
@@ -361,7 +361,7 @@ Time slot  28
 
 \section{System Call (Lời gọi hệ thống)}
 
-\subsection{Trả lời câu hỏi}
+\subsection{Trả lời câu hỏi lý thuyết}
 \textbf{Câu hỏi 1:} Cơ chế truyền tham số phức tạp cho system call khi thanh ghi có hạn?
 
 \textbf{Trả lời:} Thay vì truyền toàn bộ dữ liệu qua thanh ghi, hệ thống lưu dữ liệu vào một vùng nhớ (buffer) và chỉ truyền địa chỉ (con trỏ) hoặc ID của vùng nhớ đó qua thanh ghi cho kernel. Kernel sẽ dùng địa chỉ này để truy cập dữ liệu thực tế.
@@ -387,7 +387,7 @@ Hệ thống hiện thực các system call thông qua bảng \texttt{syscall.tb
 Loaded a process at input/proc/sc2, PID: 1 PRIO: 15
 Time slot 10
     CPU 0: Dispatched process 1
-liballoc: 178
+liballoc: 136
 print_pgtbl: ...
     \end{verbatim}
     \item \textbf{Nhận xét:} 
