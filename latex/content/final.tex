@@ -1,0 +1,31 @@
+\section{Tổng kết (Put it all together)}
+
+\textbf{Câu hỏi:} Điều gì xảy ra nếu không xử lý đồng bộ hóa trong Simple OS?
+
+\textbf{Trả lời:} Nếu thiếu đồng bộ hóa:
+\begin{enumerate}
+    \item \textbf{Race Condition trên hàng đợi:} Hai CPU có thể cùng thực hiện \texttt{dequeue} một tiến trình tại cùng một thời điểm. Hậu quả là một tiến trình được chạy song song trên 2 CPU (sai logic) hoặc con trỏ của hàng đợi bị hỏng (crash).
+    \item \textbf{Race Condition trên bộ nhớ:} Hai tiến trình gọi \texttt{alloc} cùng lúc có thể nhận được cùng một khung trang vật lý (frame) nếu biến toàn cục quản lý khung trang trống không được khóa. Điều này dẫn đến dữ liệu của tiến trình này ghi đè lên tiến trình kia.
+\end{enumerate}
+
+\section{Kết luận}
+
+\subsection{Tổng kết kết quả đạt được}
+Thông qua bài tập lớn này, nhóm đã xây dựng và hiện thực thành công một hệ điều hành mô phỏng (Simple OS) với đầy đủ các thành phần cốt lõi, đáp ứng các yêu cầu khắt khe về quản lý tài nguyên và đa nhiệm.
+
+Về \textbf{Bộ lập lịch (Scheduler)}, hệ thống đã vận hành chính xác chiến lược \textit{Multi-Level Queue (MLQ)} trên môi trường đa vi xử lý giả lập. Các kết quả thực nghiệm đã chứng minh được tính đúng đắn của các cơ chế quan trọng:
+\begin{itemize}
+    \item \textbf{Priority Preemption:} Đảm bảo các tiến trình quan trọng luôn được chiếm quyền CPU ngay lập tức.
+    \item \textbf{Fairness \& Load Balancing:} Cơ chế cấp phát khe thời gian (time slot) và phân phối tải tự động giúp tối ưu hóa hiệu suất CPU và ngăn chặn tình trạng đói tài nguyên (starvation).
+    \item \textbf{Thread Safety:} Việc áp dụng cơ chế khóa (mutex) đã giải quyết triệt để các vấn đề tranh chấp tài nguyên (race condition) trong môi trường song song.
+\end{itemize}
+
+Về \textbf{Quản lý bộ nhớ (Memory Management)}, hệ thống đã mô phỏng thành công kiến trúc bộ nhớ hiện đại với các đặc điểm nổi bật:
+\begin{itemize}
+    \item \textbf{Phân trang đa cấp 64-bit:} Hiện thực trọn vẹn quy trình phân giải địa chỉ ảo qua 5 cấp bảng trang (PGD $\rightarrow$ PT), cho phép hỗ trợ không gian địa chỉ rộng lớn.
+    \item \textbf{Cơ chế Swapping mạnh mẽ:} Hệ thống chứng tỏ khả năng vận hành ổn định ngay cả trong điều kiện tài nguyên vật lý cực kỳ hạn chế (Test case RAM 1KB). Cơ chế \textit{Page Fault Handling} và \textit{Victim Page Selection} hoạt động nhịp nhàng để luân chuyển dữ liệu giữa RAM và thiết bị lưu trữ ngoài.
+    \item \textbf{Bảo vệ bộ nhớ:} Sự phân tách rạch ròi giữa không gian người dùng (User space) và không gian nhân (Kernel space) thông qua giao diện System Call giúp đảm bảo tính toàn vẹn và an toàn cho hệ thống.
+\end{itemize}
+
+\subsection{Đánh giá chung}
+Hệ thống mô phỏng hoạt động ổn định trên tất cả các kịch bản kiểm thử (test cases), từ các tác vụ đơn giản đến các kịch bản phức tạp gây áp lực lớn lên bộ nhớ và CPU. Bài tập lớn không chỉ dừng lại ở việc viết mã nguồn mà còn giúp nhóm nắm vững các nguyên lý thiết kế hệ điều hành: từ sự trừu tượng hóa phần cứng (Hardware Abstraction), quản lý tiến trình, đến cơ chế bộ nhớ ảo phức tạp.
