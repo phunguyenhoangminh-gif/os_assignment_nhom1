@@ -20,7 +20,6 @@ static int memramsz;
 static int memswpsz[PAGING_MAX_MMSWP];
 
 struct mmpaging_ld_args {
-	/* A dispatched argument struct to compact many-fields passing to loader */
 	int vmemsz;
 	struct memphy_struct *mram;
 	struct memphy_struct **mswp;
@@ -48,51 +47,53 @@ struct cpu_args {
 static void * cpu_routine(void * args) {
 	struct timer_id_t * timer_id = ((struct cpu_args*)args)->timer_id;
 	int id = ((struct cpu_args*)args)->id;
-	/* Check for new process in ready queue */
 	int time_left = 0;
 	struct pcb_t * proc = NULL;
 	while (1) {
-		/* Check the status of current process */
 		if (proc == NULL) {
-			/* No process is running, the we load new process from
-		 	* ready queue */
 			proc = get_proc();
 			if (proc == NULL) {
-                           next_slot(timer_id);
-                           continue; /* First load failed. skip dummy load */
-                        }
+				next_slot(timer_id);
+				continue; 
+			}
 		}else if (proc->pc == proc->code->size) {
-			/* The porcess has finish it job */
 			printf("\tCPU %d: Processed %2d has finished\n",
 				id ,proc->pid);
+            fflush(stdout);
+            finish_proc(proc);
+            
 			free(proc);
 			proc = get_proc();
 			time_left = 0;
 		}else if (time_left == 0) {
-			/* The process has done its job in current time slot */
 			printf("\tCPU %d: Put process %2d to run queue\n",
 				id, proc->pid);
+			fflush(stdout);
 			put_proc(proc);
 			proc = get_proc();
 		}
 		
-		/* Recheck process status after loading new process */
 		if (proc == NULL && done) {
-			/* No process to run, exit */
 			printf("\tCPU %d stopped\n", id);
+			fflush(stdout);
 			break;
 		}else if (proc == NULL) {
-			/* There may be new processes to run in
-			 * next time slots, just skip current slot */
 			next_slot(timer_id);
 			continue;
 		}else if (time_left == 0) {
 			printf("\tCPU %d: Dispatched process %2d\n",
 				id, proc->pid);
+			fflush(stdout);
 			time_left = time_slot;
 		}
-		
-		/* Run current process */
+#ifdef MM_PAGING
+        /* Failsafe check */
+        if (proc->mm == NULL) {
+            proc->mm = malloc(sizeof(struct mm_struct));
+            init_mm(proc->mm, proc);
+        }
+#endif
+
 		run(proc);
 		time_left--;
 		next_slot(timer_id);
@@ -112,25 +113,30 @@ static void * ld_routine(void * args) {
 #endif
 	int i = 0;
 	printf("ld_routine\n");
+	fflush(stdout);
 	while (i < num_processes) {
+		while (current_time() < ld_processes.start_time[i]) {
+			next_slot(timer_id);
+		}
 		struct pcb_t * proc = load(ld_processes.path[i]);
 		struct krnl_t * krnl = proc->krnl = &os;	
 
 #ifdef MLQ_SCHED
 		proc->prio = ld_processes.prio[i];
 #endif
-		while (current_time() < ld_processes.start_time[i]) {
-			next_slot(timer_id);
-		}
+		
 #ifdef MM_PAGING
-		krnl->mm = malloc(sizeof(struct mm_struct));
-		init_mm(krnl->mm, proc);
+		proc->mm = malloc(sizeof(struct mm_struct));
+        if (proc->mm != NULL) {
+            init_mm(proc->mm, proc);
+        }
 		krnl->mram = mram;
 		krnl->mswp = mswp;
 		krnl->active_mswp = active_mswp;
 #endif
 		printf("\tLoaded a process at %s, PID: %d PRIO: %ld\n",
 			ld_processes.path[i], proc->pid, ld_processes.prio[i]);
+		fflush(stdout);
 		add_proc(proc);
 		free(ld_processes.path[i]);
 		i++;
@@ -147,6 +153,7 @@ static void read_config(const char * path) {
 	FILE * file;
 	if ((file = fopen(path, "r")) == NULL) {
 		printf("Cannot find configure file at %s\n", path);
+		fflush(stdout);
 		exit(1);
 	}
 	fscanf(file, "%d %d %d\n", &time_slot, &num_cpus, &num_processes);
@@ -166,15 +173,11 @@ static void read_config(const char * path) {
 	for(sit = 1; sit < PAGING_MAX_MMSWP; sit++)
 		memswpsz[sit] = 0;
 #else
-	/* Read input config of memory size: MEMRAM and upto 4 MEMSWP (mem swap)
-	 * Format: (size=0 result non-used memswap, must have RAM and at least 1 SWAP)
-	 *        MEM_RAM_SZ MEM_SWP0_SZ MEM_SWP1_SZ MEM_SWP2_SZ MEM_SWP3_SZ
-	*/
 	fscanf(file, "%d\n", &memramsz);
 	for(sit = 0; sit < PAGING_MAX_MMSWP; sit++)
 		fscanf(file, "%d", &(memswpsz[sit])); 
 
-       fscanf(file, "\n"); /* Final character */
+       fscanf(file, "\n"); 
 #endif
 #endif
 
@@ -198,9 +201,11 @@ static void read_config(const char * path) {
 }
 
 int main(int argc, char * argv[]) {
-	/* Read config */
+    setbuf(stdout, NULL);
+
 	if (argc != 2) {
 		printf("Usage: os [path to configure file]\n");
+		fflush(stdout);
 		return 1;
 	}
 	char path[100];
@@ -214,7 +219,6 @@ int main(int argc, char * argv[]) {
 		(struct cpu_args*)malloc(sizeof(struct cpu_args) * num_cpus);
 	pthread_t ld;
 	
-	/* Init timer */
 	int i;
 	for (i = 0; i < num_cpus; i++) {
 		args[i].timer_id = attach_event();
@@ -224,21 +228,17 @@ int main(int argc, char * argv[]) {
 	start_timer();
 
 #ifdef MM_PAGING
-	/* Init all MEMPHY include 1 MEMRAM and n of MEMSWP */
-	int rdmflag = 1; /* By default memphy is RANDOM ACCESS MEMORY */
+	int rdmflag = 1; 
 
 	struct memphy_struct mram;
 	struct memphy_struct mswp[PAGING_MAX_MMSWP];
 
-	/* Create MEM RAM */
 	init_memphy(&mram, memramsz, rdmflag);
 
-        /* Create all MEM SWAP */ 
 	int sit;
 	for(sit = 0; sit < PAGING_MAX_MMSWP; sit++)
 	       init_memphy(&mswp[sit], memswpsz[sit], rdmflag);
 
-	/* In Paging mode, it needs passing the system mem to each PCB through loader*/
 	struct mmpaging_ld_args *mm_ld_args = malloc(sizeof(struct mmpaging_ld_args));
 
 	mm_ld_args->timer_id = ld_event;
@@ -248,10 +248,8 @@ int main(int argc, char * argv[]) {
         mm_ld_args->active_mswp_id = 0;
 #endif
 
-	/* Init scheduler */
 	init_scheduler();
 
-	/* Run CPU and loader */
 #ifdef MM_PAGING
 	pthread_create(&ld, NULL, ld_routine, (void*)mm_ld_args);
 #else
@@ -262,18 +260,13 @@ int main(int argc, char * argv[]) {
 			cpu_routine, (void*)&args[i]);
 	}
 
-	/* Wait for CPU and loader finishing */
 	for (i = 0; i < num_cpus; i++) {
 		pthread_join(cpu[i], NULL);
 	}
 	pthread_join(ld, NULL);
 
-	/* Stop timer */
 	stop_timer();
 
 	return 0;
 
 }
-
-
-

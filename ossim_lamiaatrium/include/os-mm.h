@@ -38,7 +38,7 @@ typedef ADDR_TYPE addr_t;
  *            based on the address mode
  */
 #ifdef MM64
-#define FORMAT_ADDR "%lld"
+#define FORMAT_ADDR "%lu"
 #define FORMATX_ADDR "%16llx"
 #else
 #define FORMAT_ADDR "%d"
@@ -115,7 +115,7 @@ struct framephy_struct {
 struct memphy_struct {
    /* Basic field of data and size */
    BYTE *storage;
-   int maxsz;
+   addr_t maxsz;
    
    /* Sequential device fields */ 
    int rdmflg;

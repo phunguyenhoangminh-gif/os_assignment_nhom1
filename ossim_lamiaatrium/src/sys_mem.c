@@ -8,12 +8,13 @@
  * for the sole purpose of studying while attending the course CO2018.
  */
 
+#include "syscall.h" 
 #include "os-mm.h"
-#include "syscall.h"
 #include "libmem.h"
 #include "queue.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include "sched.h"
 
 #ifdef MM64
 #include "mm64.h"
@@ -21,50 +22,54 @@
 #include "mm.h"
 #endif
 
+//typedef char BYTE;
+
 int __sys_memmap(struct krnl_t *krnl, uint32_t pid, struct sc_regs* regs)
 {
    int memop = regs->a1;
+   int ret = 0; 
    BYTE value;
-   struct pcb_t *caller = NULL;
-   struct queue_t *q = krnl->running_list;
    
-   for(int i = 0; i < q->size; i++) {
-       if (q->proc[i]->pid == pid) {
-           caller = q->proc[i];
-           break;
-       }
+   struct pcb_t *caller = find_process_by_pid(krnl, pid);
+   
+   /* Safety check */
+   if (caller == NULL) {
+       printf("[ERROR] __sys_memmap: Process PID %d not found in kernel\n", pid);
+       return -1;
    }
 
-   if (caller == NULL) {
-       return -1; 
-   }
-	
+   /*
+    * @bksysnet: Please note in the dual spacing design
+    *            syscall implementations are in kernel space.
+    */
+   
    switch (memop) {
    case SYSMEM_MAP_OP:
-            vmap_pgd_memset(caller, regs->a2, regs->a3);
+            ret = vmap_pgd_memset(caller, regs->a2, regs->a3);
             break;
+            
    case SYSMEM_INC_OP:
-            inc_vma_limit(caller, regs->a2, regs->a3);
+            ret = inc_vma_limit(caller, regs->a2, regs->a3);
             break;
+            
    case SYSMEM_SWP_OP:
-            __mm_swap_page(caller, regs->a2, regs->a3);
+            ret = __mm_swap_page(caller, regs->a2, regs->a3);
             break;
+            
    case SYSMEM_IO_READ:
-            if (pg_getval(caller->krnl->mm, regs->a2, &value, caller) == 0) {
-                regs->a3 = (int)value; 
-            } else {
-                return -1;
+            ret = MEMPHY_read(caller->krnl->mram, regs->a2, &value);
+            if (ret == 0) {
+                regs->a3 = (unsigned int)value; 
             }
             break;
+            
    case SYSMEM_IO_WRITE:
-            pg_setval(caller->krnl->mm, regs->a2, (BYTE)regs->a3, caller);
+            ret = MEMPHY_write(caller->krnl->mram, regs->a2, (BYTE)regs->a3);
             break;
+            
    default:
-            printf("Memop code: %d\n", memop);
-            break;
+            ret = -1;
    }
    
-   return 0;
+   return ret; 
 }
-
-

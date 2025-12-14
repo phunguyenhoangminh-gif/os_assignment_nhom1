@@ -22,15 +22,16 @@ static struct queue_t running_list;
 #ifdef MLQ_SCHED
 static struct queue_t mlq_ready_queue[MAX_PRIO];
 static int slot[MAX_PRIO];
-static int current_slot[MAX_PRIO];  /* Current slot usage for each priority */
-static int current_prio = 0;        /* Current priority level being served */
+static int current_slot[MAX_PRIO]; 
+static int current_prio = 0;
+static pthread_mutex_t dispatch_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 int queue_empty(void) {
 #ifdef MLQ_SCHED
 	unsigned long prio;
 	for (prio = 0; prio < MAX_PRIO; prio++)
-		if(!empty(&mlq_ready_queue[prio])) 
+		if (!empty(&mlq_ready_queue[prio])) 
 			return -1;
 #endif
 	return (empty(&ready_queue) && empty(&run_queue));
@@ -39,7 +40,6 @@ int queue_empty(void) {
 void init_scheduler(void) {
 #ifdef MLQ_SCHED
     int i ;
-
 	for (i = 0; i < MAX_PRIO; i ++) {
 		mlq_ready_queue[i].size = 0;
 		slot[i] = MAX_PRIO - i; 
@@ -53,6 +53,13 @@ void init_scheduler(void) {
 	pthread_mutex_init(&queue_lock, NULL);
 }
 
+void finish_proc(struct pcb_t * proc) {
+    if (proc == NULL) return;
+    pthread_mutex_lock(&queue_lock);
+    purgequeue(&running_list, proc);
+    pthread_mutex_unlock(&queue_lock);
+}
+
 #ifdef MLQ_SCHED
 /* 
  *  Stateful design for routine calling
@@ -61,71 +68,57 @@ void init_scheduler(void) {
  *  State representation   prio = 0 .. MAX_PRIO, curr_slot = 0..(MAX_PRIO - prio)
  */
 struct pcb_t * get_mlq_proc(void) {
-	struct pcb_t * proc = NULL;
+    struct pcb_t * proc = NULL;
+    pthread_mutex_lock(&dispatch_lock);
+    pthread_mutex_lock(&queue_lock);
+    
+    int prio = current_prio;
+    int attempts = 0;
+    
+    while (attempts < MAX_PRIO) {
+        if (!empty(&mlq_ready_queue[prio]) && current_slot[prio] < slot[prio]) {
+            proc = dequeue(&mlq_ready_queue[prio]);
+            if (proc != NULL) {
+                current_slot[prio]++;
+                enqueue(&running_list, proc);
+                
+                if (current_slot[prio] >= slot[prio]) {
+                    current_slot[prio] = 0;
+                    current_prio = (prio + 1) % MAX_PRIO;
+                }
+                
+                pthread_mutex_unlock(&queue_lock);
+                pthread_mutex_unlock(&dispatch_lock);
+                return proc;
+            }
+        }
 
-	pthread_mutex_lock(&queue_lock);
-	
-	/* MLQ Policy: Always check from highest priority (0) to lowest */
-	for (int prio = 0; prio < MAX_PRIO; prio++) {
-		/* Check if this priority queue has processes and available slots */
-		if (!empty(&mlq_ready_queue[prio]) && 
-		    current_slot[prio] < slot[prio]) {
-			
-			/* Get process from this priority queue */
-			proc = dequeue(&mlq_ready_queue[prio]);
-			if (proc != NULL) {
-				current_slot[prio]++;
-				current_prio = prio; /* Update current priority */
-				break;
-			}
-		}
-	}
-	
-	/* If no process found, reset all slots and try again */
-	if (proc == NULL) {
-		for (int i = 0; i < MAX_PRIO; i++) {
-			current_slot[i] = 0;
-		}
-		
-		/* Try again from highest priority */
-		for (int prio = 0; prio < MAX_PRIO; prio++) {
-			if (!empty(&mlq_ready_queue[prio])) {
-				proc = dequeue(&mlq_ready_queue[prio]);
-				if (proc != NULL) {
-					current_slot[prio] = 1;
-					current_prio = prio;
-					break;
-				}
-			}
-		}
-	}
-	
-	if (proc != NULL) {
-		enqueue(&running_list, proc);
-	}
-	
-	pthread_mutex_unlock(&queue_lock);
-	return proc;	
+        prio = (prio + 1) % MAX_PRIO;
+        attempts++;
+    
+        if (prio == 0) {
+            for (int i = 0; i < MAX_PRIO; i++) {
+                current_slot[i] = 0;
+            }
+            current_prio = 0;
+        }
+    }
+    
+    pthread_mutex_unlock(&queue_lock);
+    pthread_mutex_unlock(&dispatch_lock);
+    return proc;	
 }
 
 void put_mlq_proc(struct pcb_t * proc) {
 	if (proc == NULL) return;
-	
 	proc->krnl->ready_queue = &ready_queue;
 	proc->krnl->mlq_ready_queue = mlq_ready_queue;
 	proc->krnl->running_list = &running_list;
-
-	/* Put process back to appropriate priority queue with synchronization */
 	pthread_mutex_lock(&queue_lock);
-	
-	/* Remove from running list first if it exists there */
 	purgequeue(&running_list, proc);
-	
-	/* Add back to appropriate priority queue */
 	if (proc->prio < MAX_PRIO) {
 		enqueue(&mlq_ready_queue[proc->prio], proc);
 	}
-	
 	pthread_mutex_unlock(&queue_lock);
 }
 
@@ -135,11 +128,7 @@ void add_mlq_proc(struct pcb_t * proc) {
 	proc->krnl->ready_queue = &ready_queue;
 	proc->krnl->mlq_ready_queue = mlq_ready_queue;
 	proc->krnl->running_list = &running_list;
-
-	/* Add new process to appropriate priority queue with synchronization */
 	pthread_mutex_lock(&queue_lock);
-	
-	/* Ensure priority is valid */
 	if (proc->prio < MAX_PRIO) {
 		enqueue(&mlq_ready_queue[proc->prio], proc);
 	} else {
@@ -153,62 +142,129 @@ void add_mlq_proc(struct pcb_t * proc) {
 struct pcb_t * get_proc(void) {
 	return get_mlq_proc();
 }
-
 void put_proc(struct pcb_t * proc) {
 	return put_mlq_proc(proc);
 }
-
 void add_proc(struct pcb_t * proc) {
 	return add_mlq_proc(proc);
 }
 #else
 struct pcb_t * get_proc(void) {
 	struct pcb_t * proc = NULL;
-
 	pthread_mutex_lock(&queue_lock);
-	
-	/* Get process from ready_queue with highest priority */
 	if (!empty(&ready_queue)) {
 		proc = dequeue(&ready_queue);
 		if (proc != NULL) {
 			enqueue(&running_list, proc);
 		}
 	}
-	
 	pthread_mutex_unlock(&queue_lock);
-
 	return proc;
 }
 
 void put_proc(struct pcb_t * proc) {
 	if (proc == NULL) return;
-	
 	proc->krnl->ready_queue = &ready_queue;
 	proc->krnl->running_list = &running_list;
-
-	/* Put process back to ready queue with synchronization */
 	pthread_mutex_lock(&queue_lock);
-	
-	/* Remove from running list first */
 	purgequeue(&running_list, proc);
-	
-	/* Add to run queue for next scheduling */
 	enqueue(&run_queue, proc);
-	
 	pthread_mutex_unlock(&queue_lock);
 }
 
 void add_proc(struct pcb_t * proc) {
 	if (proc == NULL) return;
-	
 	proc->krnl->ready_queue = &ready_queue;
 	proc->krnl->running_list = &running_list;
-
-	/* Add new process to ready queue with synchronization */
 	pthread_mutex_lock(&queue_lock);
 	enqueue(&ready_queue, proc);
 	pthread_mutex_unlock(&queue_lock);	
 }
 #endif
 
+struct pcb_t * get_proc_by_pid(int pid) {
+    struct pcb_t * proc = NULL;
+    pthread_mutex_lock(&queue_lock);
+    for (int i = 0; i < running_list.size; i++) {
+        if (running_list.proc[i] != NULL && running_list.proc[i]->pid == pid) {
+            proc = running_list.proc[i];
+            goto found;
+        }
+    }
+#ifdef MLQ_SCHED
+    for (int prio = 0; prio < MAX_PRIO; prio++) {
+        for (int i = 0; i < mlq_ready_queue[prio].size; i++) {
+            if (mlq_ready_queue[prio].proc[i] != NULL && 
+                mlq_ready_queue[prio].proc[i]->pid == pid) {
+                proc = mlq_ready_queue[prio].proc[i];
+                goto found;
+            }
+        }
+    }
+#else
+    for (int i = 0; i < ready_queue.size; i++) {
+        if (ready_queue.proc[i] != NULL && ready_queue.proc[i]->pid == pid) {
+            proc = ready_queue.proc[i];
+            goto found;
+        }
+    }
+#endif
+found:
+    pthread_mutex_unlock(&queue_lock);
+    return proc;
+}
 
+/*
+ * find_process_by_pid - Securely find a process by PID in kernel structure
+ * This function implements the required PID-based access mechanism
+ * to avoid direct PCB passing from userspace
+ */
+struct pcb_t *find_process_by_pid(struct krnl_t *krnl, uint32_t pid)
+{
+    struct pcb_t *proc = NULL;
+
+    if (krnl == NULL) {
+        return NULL;
+    }
+
+    pthread_mutex_lock(&queue_lock);
+
+    /* Search in running_list first */
+    if (krnl->running_list != NULL) {
+        for (int i = 0; i < krnl->running_list->size; i++) {
+            if (krnl->running_list->proc[i] != NULL &&
+                krnl->running_list->proc[i]->pid == pid) {
+                proc = krnl->running_list->proc[i];
+                goto found_pid;
+            }
+        }
+    }
+
+    /* Search in ready queues */
+#ifdef MLQ_SCHED
+    for (int prio = 0; prio < MAX_PRIO; prio++) {
+        for (int i = 0; i < krnl->mlq_ready_queue[prio].size; i++) {
+            if (krnl->mlq_ready_queue[prio].proc[i] != NULL &&
+                krnl->mlq_ready_queue[prio].proc[i]->pid == pid) {
+                proc = krnl->mlq_ready_queue[prio].proc[i];
+                goto found_pid;
+            }
+        }
+    }
+#else
+    /* Search in standard ready queue */
+    if (krnl->ready_queue != NULL) {
+        for (int i = 0; i < krnl->ready_queue->size; i++) {
+            if (krnl->ready_queue->proc[i] != NULL &&
+                krnl->ready_queue->proc[i]->pid == pid) {
+                proc = krnl->ready_queue->proc[i];
+                goto found_pid;
+            }
+        }
+    }
+#endif
+
+found_pid:
+    pthread_mutex_unlock(&queue_lock);
+    return proc;
+}
