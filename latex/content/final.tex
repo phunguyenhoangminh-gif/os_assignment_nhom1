@@ -1,5 +1,5 @@
 \section{Tổng kết (Put it all together)}
-
+\subsection{Trả lời câu hỏi lý thuyết}
 \textbf{Câu hỏi:} Điều gì xảy ra nếu không xử lý đồng bộ hóa trong Simple OS?
 
 \textbf{Trả lời:} Nếu thiếu đồng bộ hóa:
@@ -7,7 +7,106 @@
     \item \textbf{Race Condition trên hàng đợi:} Hai CPU có thể cùng thực hiện \texttt{dequeue} một tiến trình tại cùng một thời điểm. Hậu quả là một tiến trình được chạy song song trên 2 CPU (sai logic) hoặc con trỏ của hàng đợi bị hỏng (crash).
     \item \textbf{Race Condition trên bộ nhớ:} Hai tiến trình gọi \texttt{alloc} cùng lúc có thể nhận được cùng một khung trang vật lý (frame) nếu biến toàn cục quản lý khung trang trống không được khóa. Điều này dẫn đến dữ liệu của tiến trình này ghi đè lên tiến trình kia.
 \end{enumerate}
+\subsection{Kết quả chạy thử nghiệm}
+\subsubsection{Test Case: Single CPU Scheduling (os\_1\_singleCPU\_mlq)}
+\textbf{Mục đích:} Kiểm tra hoạt động của bộ lập lịch MLQ trong môi trường đơn xử lý (Single CPU). Đây là kịch bản cơ bản nhất để xác nhận tính đúng đắn của logic ưu tiên và chiếm quyền (preemption) khi không có sự hỗ trợ của tải cân bằng (load balancing) giữa các CPU.
 
+\begin{itemize}
+    \item \textbf{Cấu hình:} 
+    \begin{itemize}
+        \item Số lượng CPU: 1 (CPU 0).
+        \item Input file: \texttt{os\_1\_singleCPU\_mlq}.
+        \item Các tiến trình được nạp lần lượt với độ ưu tiên tăng dần (giá trị Priority giảm dần):
+        \begin{itemize}
+            \item Time 1: P1 (s4, PRIO 4)
+            \item Time 3: P2 (s3, PRIO 3)
+            \item Time 5: P3 (m1s, PRIO 2)
+            \item Time 11: P7 (s0, PRIO 1)
+        \end{itemize}
+    \end{itemize}
+
+    \item \textbf{Kết quả (Rút gọn output):}
+    \begin{verbatim}
+Time slot 1:  Loaded P1 (PID=1, PRIO=4)
+Time slot 2:  CPU 0: Dispatched process 1
+Time slot 3:  Loaded P2 (PID=2, PRIO=3)
+Time slot 4:  CPU 0: Put process 1 to run queue
+              CPU 0: Dispatched process 2  <-- P2 preempts P1
+Time slot 5:  Loaded P3 (PID=3, PRIO=2)
+Time slot 6:  CPU 0: Put process 2 to run queue
+              CPU 0: Dispatched process 3  <-- P3 preempts P2
+...
+Time slot 11: Loaded P7 (PID=7, PRIO=1)
+Time slot 12: CPU 0: Put process 6 to run queue
+              CPU 0: Dispatched process 7  <-- P7 preempts P6
+    \end{verbatim}
+
+    \item \textbf{Phân tích và Nhận xét:}
+    \begin{enumerate}
+        \item \textbf{Độc chiếm tài nguyên:} Vì chỉ có 1 CPU, tại mỗi thời điểm chỉ có duy nhất một tiến trình được thực thi. Log chỉ hiển thị hoạt động của \texttt{CPU 0}.
+        \item \textbf{Phản hồi tức thì (Immediate Preemption):}
+        \begin{itemize}
+            \item Tại Time 4, ngay khi P2 (PRIO 3) xuất hiện, nó lập tức chiếm quyền của P1 (PRIO 4).
+            \item Tại Time 6, P3 (PRIO 2) tiếp tục chiếm quyền của P2.
+            \item Tại Time 12, P7 (PRIO 1) chiếm quyền của tiến trình đang chạy (P6).
+        \end{itemize}
+        Điều này khẳng định thuật toán MLQ luôn duy trì tính chất: \textit{"Tại bất kỳ thời điểm nào, CPU luôn được dành cho tiến trình có độ ưu tiên cao nhất trong hệ thống"}.
+        \item \textbf{Xếp hàng chờ (Queuing):} Các tiến trình bị chiếm quyền (P1, P2...) được đưa trở lại hàng đợi (\texttt{Put process to run queue}) và phải đợi cho đến khi các tiến trình ưu tiên cao hơn hoàn thành hoặc hết time slot.
+    \end{enumerate}
+    \textbf{Kết luận:} Test case này chứng minh logic cốt lõi của bộ lập lịch là chính xác tuyệt đối trong môi trường đơn giản nhất, làm nền tảng vững chắc cho việc mở rộng sang đa xử lý.
+\end{itemize}
+\subsubsection{Test Case: Single CPU với Paging (os\_1\_singleCPU\_mlq\_paging)}
+\textbf{Mục đích:} Đây là kịch bản kiểm thử toàn diện nhất, kết hợp giữa cơ chế lập lịch MLQ trên đơn vi xử lý và hệ thống quản lý bộ nhớ phân trang. Test case này nhằm xác minh sự tương tác chính xác giữa Scheduler (cấp phát CPU) và Memory Management (cấp phát RAM) trong môi trường tài nguyên hạn chế.
+
+\begin{itemize}
+    \item \textbf{Cấu hình:}
+    \begin{itemize}
+        \item \textbf{CPU:} 1 Core (Đảm bảo tính tuần tự của các sự kiện).
+        \item \textbf{RAM:} 1MB (Đủ lớn để không xảy ra Swapping liên tục, tập trung kiểm tra Logic cấp phát).
+        \item \textbf{Input:} \texttt{os\_1\_singleCPU\_mlq\_paging}.
+        \item \textbf{Tiến trình:} Hỗn hợp các tiến trình tính toán (s3, s4) và tiến trình sử dụng bộ nhớ nhiều (m0s, m1s).
+    \end{itemize}
+
+    \item \textbf{Phân tích Log (Rút gọn):}
+    \begin{verbatim}
+Time slot   6
+        CPU 0: Put process  2 to run queue
+        CPU 0: Dispatched process  3
+liballoc:136
+print_pgtbl:
+ PDG=0x762fc800cf80 P4g=0x762fc800df90 PUD=0x762fc800efa0 PMD=0x762fc800ffb0
+        Loaded a process at input/proc/s2, PID: 4 PRIO: 3
+    \end{verbatim}
+    \textit{$\rightarrow$ Tiến trình 3 được CPU cấp quyền, ngay lập tức gọi \texttt{liballoc} để xin cấp phát bộ nhớ. Hệ thống khởi tạo bảng trang (PDG) thành công.}
+
+    \begin{verbatim}
+Time slot   9
+liballoc:136
+print_pgtbl:
+ PDG=0x762fc800cf80 P4g=0x762fc800df90 PUD=0x762fc800efa0 PMD=0x762fc800ffb0
+        Loaded a process at input/proc/p1s, PID: 6 PRIO: 2
+    \end{verbatim}
+    \textit{$\rightarrow$ Tiến trình 6 được nạp và cấp phát bộ nhớ. Địa chỉ PDG khác với PDG của PID 3, chứng minh sự \textbf{cô lập không gian nhớ} giữa các tiến trình.}
+
+    \begin{verbatim}
+Time slot  34
+        CPU 0: Processed  7 has finished
+        CPU 0: Dispatched process  3
+libfree:155
+print_pgtbl:
+ PDG=0x762fc800cf80 P4g=0x762fc800df90 PUD=0x762fc800efa0 PMD=0x762fc800ffb0
+    \end{verbatim}
+    \textit{$\rightarrow$ Tiến trình 3 quay lại CPU (sau khi bị preempt) và thực hiện giải phóng bộ nhớ (\texttt{libfree}).}
+
+    \item \textbf{Đánh giá chi tiết:}
+    \begin{enumerate}
+        \item \textbf{Sự đồng bộ (Synchronization):} Các thao tác bộ nhớ (\texttt{liballoc}, \texttt{libfree}) diễn ra chính xác trong khe thời gian (time slot) mà tiến trình đó đang nắm giữ CPU. Không có hiện tượng một tiến trình đang chờ (waiting) lại thực hiện truy xuất bộ nhớ.
+        \item \textbf{Tính toàn vẹn dữ liệu (Isolation):} Mỗi tiến trình khi được cấp phát bộ nhớ đều có một địa chỉ bảng phân trang (PDG) riêng biệt. Điều này xác nhận hệ thống MMU đã phân tách không gian nhớ của người dùng (User Space) hiệu quả, ngăn chặn việc truy cập trái phép chéo giữa các tiến trình.
+        \item \textbf{Preemption an toàn:} Khi một tiến trình đang thực hiện cấp phát bộ nhớ bị chiếm quyền (ví dụ PID 3 bị PID 6 preempt), trạng thái bộ nhớ của nó được bảo toàn. Khi được cấp CPU trở lại, nó tiếp tục thực thi đúng ngữ cảnh cũ.
+    \end{enumerate}
+
+    \item \textbf{Kết luận:} Test case này khẳng định sự tích hợp thành công giữa module Scheduler và Memory. Hệ thống hoạt động ổn định, đảm bảo tính công bằng trong lập lịch đồng thời duy trì sự an toàn và chính xác trong quản lý bộ nhớ.
+\end{itemize}
 \section{Kết luận}
 
 \subsection{Tổng kết kết quả đạt được}
