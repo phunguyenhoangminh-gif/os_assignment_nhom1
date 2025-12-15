@@ -681,7 +681,135 @@ Phần này trình bày chi tiết trạng thái cấp phát bộ nhớ trong c�
     \item \textbf{Scheduler:} Sử dụng \texttt{queue\_lock} và \texttt{dispatch\_lock} trong \texttt{sched.c} để bảo vệ hàng đợi \texttt{ready\_queue} và \texttt{running\_list}. Đảm bảo hai CPU không lấy cùng một tiến trình hoặc làm hỏng cấu trúc hàng đợi.
     \item \textbf{Memory:} Sử dụng \texttt{mmvm\_lock} (trong \texttt{libmem.c}) và \texttt{frfm\_lock} (trong các thao tác cấp phát khung trang) để bảo vệ danh sách khung trang trống và các cấu trúc dữ liệu bộ nhớ ảo.
 \end{itemize}
+\subsubsection{Xác định Critical Sections}
+Trong môi trường multi-CPU, các tài nguyên chia sẻ (shared resources) cần được bảo vệ khỏi race conditions. Hệ thống xác định các critical sections sau:
+\paragraph{A. Scheduler Queues (sched.c)}
+Các hàng đợi MLQ và running\_list là shared resources được truy cập đồng thời bởi nhiều CPUs:
+\begin{lstlisting}[language=C, caption={Shared resources trong scheduler}, label=lst:sched-shared]
+// From src/sched.c
+static struct queue_t mlq_ready_queue[MAX_PRIO];  // 140 priority queues
+static struct queue_t running_list;                // Currently running processes
+static pthread_mutex_t queue_lock;                 // Primary lock
+static pthread_mutex_t dispatch_lock;              // Dispatch-specific lock
+\end{lstlisting}
+\paragraph{B. Memory Management (libmem.c)} ~\
+Các thao tác cấp phát/giải phóng bộ nhớ cần đồng bộ để tránh:
+\begin{itemize}
+\item Cấp phát cùng một vùng nhớ cho 2 processes
+\item Xung đột khi update symbol table (symrgtbl)
+\item Race trong free region list (vm\_freerg\_list)
+\end{itemize}
+\begin{lstlisting}[language=C, caption={Mutex lock trong memory management}]
+// From src/libmem.c
+static pthread_mutex_t mmvm_lock = PTHREAD_MUTEX_INITIALIZER;
+\end{lstlisting}
+\subsubsection{Implementation Chi tiết}
+\paragraph{A. Scheduler Synchronization} ~\
+Hệ thống sử dụng \textbf{2-level locking strategy}:
+\begin{enumerate}
+\item \textbf{queue\_lock}: Bảo vệ toàn bộ cấu trúc hàng đợi
+\item \textbf{dispatch\_lock}: Bảo vệ quá trình dispatch để tránh 2 CPUs chọn cùng 1 process
+\end{enumerate}
+\begin{lstlisting}[language=C, caption={Synchronization trong get\_mlq\_proc()}, label=lst:sync-scheduler]
+// From src/sched.c (get_mlq_proc)
+struct pcb_t * get_mlq_proc(void) {
+struct pcb_t * proc = NULL;
+// CRITICAL SECTION START
+pthread_mutex_lock(&dispatch_lock);  // <- Lock 1: Ngan dispatch conflict
+pthread_mutex_lock(&queue_lock);     // <- Lock 2: Bao ve queue structure
 
+int prio = current_prio;
+int attempts = 0;
+
+while (attempts < MAX_PRIO) {
+    if (!empty(&mlq_ready_queue[prio]) && 
+        current_slot[prio] < slot[prio]) {
+        
+        proc = dequeue(&mlq_ready_queue[prio]);  // <- Shared data access
+        
+        if (proc != NULL) {
+            current_slot[prio]++;
+            enqueue(&running_list, proc);        // <- Shared data modification
+            
+            if (current_slot[prio] >= slot[prio]) {
+                current_slot[prio] = 0;
+                current_prio = (prio + 1) % MAX_PRIO;
+            }
+            
+            pthread_mutex_unlock(&queue_lock);   // <- Unlock in reverse order
+            pthread_mutex_unlock(&dispatch_lock);
+            return proc;
+        }
+    }
+    
+    prio = (prio + 1) % MAX_PRIO;
+    attempts++;
+
+    // Reset mechanism when full round completed
+    if (prio == 0) {
+        for (int i = 0; i < MAX_PRIO; i++) {
+            current_slot[i] = 0;  // <- Shared state reset
+        }
+        current_prio = 0;
+    }
+}
+
+pthread_mutex_unlock(&queue_lock);
+pthread_mutex_unlock(&dispatch_lock);
+// CRITICAL SECTION END
+
+return proc;
+}
+\end{lstlisting}
+\textbf{Nguyên tắc locking:}
+\begin{itemize}
+    \item Lock theo thứ tự: \texttt{dispatch\_lock} $\rightarrow$
+\texttt{queue\_lock}
+    \item Unlock theo thứ tự ngược: \texttt{queue\_lock} $\rightarrow$
+\texttt{dispatch\_lock}
+    \item Tránh \textbf{deadlock} bằng cách duy trì consistent locking order
+\end{itemize}
+
+\paragraph{B. Memory Management Synchronization}
+\begin{lstlisting}[language=C, caption={Synchronization trong \_\_alloc()}, label=lst:sync-alloc]
+// From src/libmem.c (__alloc)
+int __alloc(struct pcb_t *caller, int vmaid, int rgid,
+addr_t size, addr_t *alloc_addr)
+{
+pthread_mutex_lock(&mmvm_lock);  // <- LOCK: Bao ve toan bo alloc flow
+struct vm_rg_struct rgnode;
+struct vm_area_struct *cur_vma = get_vma_by_num(caller->mm, vmaid);
+int inc_sz = 0;
+
+// Try to reuse free region
+if (get_free_vmrg_area(caller, vmaid, size, &rgnode) == 0)
+{
+    // <- SHARED DATA: symrgtbl modification
+    caller->mm->symrgtbl[rgid].rg_start = rgnode.rg_start;
+    caller->mm->symrgtbl[rgid].rg_end = rgnode.rg_end;
+    *alloc_addr = rgnode.rg_start;
+    
+    pthread_mutex_unlock(&mmvm_lock);  // <- UNLOCK: Release early if success
+    return 0;
+}
+
+// ... System call to expand heap ...
+
+// <- SHARED DATA: symrgtbl update after expansion
+caller->mm->symrgtbl[rgid].rg_start = old_sbrk;
+caller->mm->symrgtbl[rgid].rg_end = old_sbrk + size;
+*alloc_addr = old_sbrk;
+
+pthread_mutex_unlock(&mmvm_lock);  // <- UNLOCK: Always release before return
+return 0;
+}
+\end{lstlisting}
+\textbf{Protected Operations:}
+\begin{itemize}
+\item \texttt{symrgtbl[]} updates (symbol table)
+\item \texttt{vm\_freerg\_list} traversal (free region list)
+\item \texttt{sbrk} pointer modification (heap boundary)
+\end{itemize}
 \subsection{Kết quả chạy thử nghiệm}
 Khi chạy testcase \texttt{os\_1\_mlq\_paging} với cấu hình 4 CPU (Rút gọn output):
 \begin{verbatim}
