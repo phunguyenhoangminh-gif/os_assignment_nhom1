@@ -41,26 +41,24 @@ Khi hệ thống khởi động, hàm \texttt{init\_memphy} sẽ cấp phát vù
 
 \begin{lstlisting}[language=C, caption={Định dạng bộ nhớ thành danh sách khung (src/mm-memphy.c)}, label={lst:memphy_format}]
 int MEMPHY_format(struct memphy_struct *mp, int pagesz)
+int MEMPHY_format(struct memphy_struct *mp, int pagesz)
 {
-   // Calculate total number of frames based on device size
    int numfp = mp->maxsz / pagesz;
    struct framephy_struct *newfst, *fst;
    int iter = 0;
 
    if (numfp <= 0) return -1;
 
-   // Initialize the first node of the free list
    fst = malloc(sizeof(struct framephy_struct));
    fst->fpn = iter;
    mp->free_fp_list = fst;
 
-   // Create a linked list of free page frames
    for (iter = 1; iter < numfp; iter++)
    {
       newfst = malloc(sizeof(struct framephy_struct));
-      newfst->fpn = iter;     // Assign Frame Page Number (0, 1, 2...)
+      newfst->fpn = iter;
       newfst->fp_next = NULL;
-      fst->fp_next = newfst;  // Link previous node to current node
+      fst->fp_next = newfst;
       fst = newfst;
    }
 
@@ -82,17 +80,15 @@ int MEMPHY_read(struct memphy_struct *mp, addr_t addr, BYTE *value)
 {
    if (mp == NULL) return -1;
 
-   // Random Access Mode (RAM)
    if (mp->rdmflg) {
-      if (addr >= mp->maxsz) return -1; // Boundary check
-      *value = mp->storage[addr];       // Direct access
+      if (addr >= (addr_t)mp->maxsz) {
+         //  printf("[ERROR] MEMPHY_read: Address out of bounds (0x%lx >= 0x%x)\n", (unsigned long)addr, mp->maxsz);
+          return -1;
+      }
+      *value = mp->storage[addr];
    }
    else 
-   {
-      // Sequential Access Mode (Tape/Serial)
-      // Must move the cursor to the required address
       return MEMPHY_seq_read(mp, addr, value);
-   }
 
    return 0;
 }
